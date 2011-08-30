@@ -34,9 +34,16 @@ push @toolchain, 'cpan/Text-ParseWords/lib' if $^O eq 'MSWin32';
 # as they build, and it's important that @INC order ensures that the partially
 # written files are always masked by the complete versions.
 
+# When cross-compiling, the built modules are in xlib, not lib:
+my @xlib = ();
+if($::Cross::platform) {
+    @xlib = ("xlib/$::Cross::platform");
+}
+
 my $inc = join ",\n        ",
     map { "q\0$_\0" }
-    (map {File::Spec::Functions::rel2abs($_)} @toolchain, 'lib'), '.';
+    (map {File::Spec::Functions::rel2abs($_)} @toolchain, 'lib', @xlib), '.';
+
 
 # If any of the system's build tools are written in Perl, then this module
 # may well be loaded by a much older version than we are building. So keep it

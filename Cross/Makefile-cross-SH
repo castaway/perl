@@ -625,7 +625,7 @@ perl.$(CROSS_NAME): perl$(EXE_EXT)
 	# mv perl$(EXE_EXT) perl.$(CROSS_NAME)
 	echo "[built perl]"
 
-perl$(EXE_EXT): $& perlmain$(OBJ_EXT) $(LIBPERL) $(static_ext) ext.libs $(PERLEXPORT)
+perl$(EXE_EXT): $& perlmain$(OBJ_EXT) $(LIBPERL) $(static_ext) $(dynamic_ext) ext.libs $(PERLEXPORT)
 	-@rm -f miniperl.xok
 	$(SHRPENV) $(LDLIBPTH) $(CC) -o perl$(PERL_SUFFIX)dyn$(EXE_EXT) $(PERL_PROFILE_LDFLAGS) $(CLDFLAGS) $(CCDLFLAGS) perlmain$(OBJ_EXT) $(static_real) $(LLIBPERL) `cat ext.libs` $(libs)
 	$(SHRPENV) $(LDLIBPTH) $(CC) -o perl$(PERL_SUFFIX)$(EXE_EXT) $(PERL_PROFILE_LDFLAGS) $(CLDFLAGS) perlmain$(OBJ_EXT) $(static_real) $(LLIBPERL) `cat ext.libs` $(libs)
