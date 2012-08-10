@@ -142,23 +142,16 @@ sub get_files {
 	      $Config{gccversion} !~ /intel/i
 	      # might be using, say, Intel's icc
 	     ) {
-#        print STDERR "CC: $Config{cc} CCNAME: $Config{ccname}\n";
-        if ($Config{cc} eq 'agcc') {
-
-            ## Added by Jess for Android NDK
-            ## $ENV{ANDROID_NDK} is laziness, how else should we find it?
-            if(exists $ENV{ANDROID_NDK}) {
-#                print STDERR "Found DROID: $ENV{ANDROID_NDK}\n";
-                my $android_errno_h = "$ENV{ANDROID_NDK}/platforms/android-9/arch-arm/usr/include/errno.h";
-                if(-e $android_errno_h ) {
-                    $file{$android_errno_h} = 1;
-                }
-            }
-        }
+    # General cross-compiling use, cross-compiler in $SYSROOT
+#        print STDERR "print-sysroot ", `$Config{cc} -print-sysroot`;
+    my $sysroot = `$Config{cc} -print-sysroot` || '';
+        chomp($sysroot);
+#        print STDERR "sysroot: $sysroot/usr/include/errno.h\n";
 	# Some Linuxes have weird errno.hs which generate
 	# no #file or #line directives
-	my $linux_errno_h = -e '/usr/include/errno.h' ?
-	    '/usr/include/errno.h' : '/usr/local/include/errno.h';
+	my $linux_errno_h = -e "$sysroot/usr/include/errno.h" ?
+	    "$sysroot/usr/include/errno.h" : "$sysroot/usr/local/include/errno.h";
+#        print STDERR "found: $linux_errno_h\n";
 	$file{$linux_errno_h} = 1;
     } elsif ($^O eq 'beos' || $^O eq 'haiku') {
 	# hidden in a special place

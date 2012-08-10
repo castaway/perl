@@ -19,7 +19,7 @@
 rm -rf android android.zip
 
 # -- Extensions --
-#
+# ## this whole static_ext thing here is unused!
 # Building fine but left out for now: attributes Devel/Peek MIME/Base64 mro PerlIO/scalar PerlIO/via Safe Storable Time/Piece
 # Would be nice but do not build trivially: Time/HiRes
 # Big/complex: Compress* DB_File Encode Filter/Util/Call IO/Compress Math/BigInt/FastCalc PerlIO/encoding Time/HiRes Unicode/Normalize
@@ -27,7 +27,7 @@ rm -rf android android.zip
 # Unlikely to ever build: I18N/Langinfo IPC/SysV Sys/Syslog threads threads/shared Win32*
 # Not really an ext: Attribute/Handlers
 
-static_ext='B Cwd Data/Dumper Devel/PPPort Digest/MD5 Digest/SHA Fcntl File/Glob IO List/Util POSIX Socket Sys/Hostname Time/HiRes'
+# static_ext='B Cwd Data/Dumper Devel/PPPort Digest/MD5 Digest/SHA Fcntl File/Glob IO List/Util POSIX Socket Sys/Hostname Time/HiRes'
 
 echo "[building for android]"
 
@@ -61,21 +61,29 @@ agcc_test () {
 }
 
 CROSS_NAME=arm
-CCPREF=arm-eabi-
-CROSSCC=agcc
+# CCPREF=arm-eabi-
+CCPREF=arm-linux-androideabi-
+# CROSSCC=agcc
+
+export CCPREF
+ANDROID_NDK=/usr/src/android/android-ndk-r5c
+export ANDROID_NDK
+SYSROOT=$ANDROID_NDK/platforms/android-8/arch-arm/
+export SYSROOT
+CROSSCC="$ANDROID_NDK/toolchains/arm-linux-androideabi-4.4.3/prebuilt/linux-x86/bin/${CCPREF}gcc --sysroot=$SYSROOT"
 
 if [[ "x$1" != xnoconf* ]] ; then
   echo "[configuring for host]"
-  echo "[testing for agcc]"
-  case "$(agcc_test)" in
-  1) ;;
-  *) echo "$0: agcc is not working right."
-     echo "$0: You need to have .../prebuilt/OS-CPU/toolchain/arm-eabi-X.Y.Z/bin/arm-eabi-agcc in your PATH."
-     echo "$0: Cannot continue, aborting."
-     cleanup
-     exit 1 ;;
-  esac
-  cleanup
+  # echo "[testing for agcc]"
+  # case "$(agcc_test)" in
+  # 1) ;;
+  # *) echo "$0: agcc is not working right."
+  #    echo "$0: You need to have .../prebuilt/OS-CPU/toolchain/arm-eabi-X.Y.Z/bin/arm-eabi-agcc in your PATH."
+  #    echo "$0: Cannot continue, aborting."
+  #    cleanup
+  #    exit 1 ;;
+  # esac
+ cleanup
   # Configure on HOST
 
   if [[ "x$1" != xmicroperl* ]] ; then
@@ -172,7 +180,7 @@ rm -f *.o
 
 # touch xlib/$CROSS_NAME/Config.pm
 
-AR=${CCPREF}ar
+AR="$ANDROID_NDK/toolchains/arm-linux-androideabi-4.4.3/prebuilt/linux-x86/bin/${CCPREF}ar"
 
 MAKEFILE=Makefile-cross-$CROSS_NAME
 make -f ${MAKEFILE} xconfig.h || exit 1
