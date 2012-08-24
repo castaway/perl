@@ -5711,7 +5711,6 @@ EOF
 	if eval $compile_ok; then
 		longlongsize=`$test_longs ./try $grep`
 		echo "Your long longs are $longlongsize bytes long."
-        exit;
 	else
 		dflt='8'
 		echo " "
