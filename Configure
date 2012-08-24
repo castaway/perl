@@ -6903,9 +6903,52 @@ int main()
     exit(0);
 }
 EOCP
+	if $test "X$usecrosscompile" != X; then
+	if test "$voidflags" -gt 7; then
+		echo '#define VOID_PTR char *' > try.c
+	else
+		echo '#define VOID_PTR void *' > try.c
+	fi
+	$cat >>try.c <<EOCP
+#include <stdio.h>
+#$i_stdlib I_STDLIB
+#ifdef I_STDLIB
+#include <stdlib.h>
+#endif
+
+    VOID_PTR PERL_POINTER_SIZE;
+
+int main()
+{
+	exit(0);
+}
+EOCP
+    test_pointers=$run
+    if $test "X$usecrosscompile" != X; then
+	    case "$src" in
+	        /*) test_pointers=$src/Cross/scripts/test_pointers
+	            ;;
+	        *)  pwd=`$test -f ../Configure & cd ..; pwd`
+	            test_pointers=$pwd/Cross/scripts/test_pointers
+	            ;;
+	    esac
+    fi
+
+    cat >$test_pointers <<EOF
+#!/bin/sh
+file_to_check=\$1
+grep=\$2
+nm_check=(\`nm -p -t d -S \$file_to_check | \$grep 'PERL_' | cut -d" " -f2\`)
+## Will nm always sort the results in the same order?
+## manpage suggests default is alphabetic, but no way to force it?
+echo \$(expr \${nm_check[0]} + 0)
+EOF
+    $chmod a+rx $test_pointers
+	fi
+
 	set try
 	if eval $compile_ok; then
-		ptrsize=`$run ./try`
+		ptrsize=`$test_pointers ./try $grep`
 		echo "Your pointers are $ptrsize bytes long."
 	else
 		dflt='4'
