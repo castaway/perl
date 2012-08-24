@@ -4448,15 +4448,26 @@ int main() {
 	return(0);
 }
 EOM
-if $cc -o try $ccflags $ldflags try.c; then
-	gccversion=`$run ./try`
-	case "$gccversion" in
-	'') echo "You are not using GNU cc." ;;
-	*)  echo "You are using GNU cc $gccversion."
-	    ccname=gcc
-	    ;;
-	esac
+
+if $test "X$usecrosscompile" != X; then
+  $cat >try.c <<EOM
+#if defined(__GNUC__) && !defined(__INTEL_COMPILER)
+#ifdef __VERSION__
+	PERL_CONFIG_MARKER version=__VERSION__
+#else
+	PERL_CONFIG_MARKER version=1
+#endif
+#else
+    PERL_CONFIG_MARKER
+#endif
+
+EOM
+
+  gccversion=`$cc -v -E try.c 2>&1 | $grep PERL_CONFIG_MARKER | sed 's/PERL_CONFIG_MARKER version=//' | sed 's/"//g'`
 else
+  if $cc -o try $ccflags $ldflags try.c; then
+  	gccversion=`$run ./try`
+  else
 	echo " "
 	echo "*** WHOA THERE!!! ***" >&4
 	echo "    Your C compiler \"$cc\" doesn't seem to be working!" >&4
@@ -4466,7 +4477,16 @@ else
 		exit 1
 		;;
 	esac
+  fi
 fi
+
+case "$gccversion" in
+	'') echo "You are not using GNU cc." ;;
+	*)  echo "You are using GNU cc $gccversion."
+	    ccname=gcc
+	    ;;
+esac
+
 $rm -f try try.*
 case "$gccversion" in
 1*) cpp=`./loc gcc-cpp $cpp $pth` ;;
