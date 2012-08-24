@@ -5567,9 +5567,51 @@ int main()
 	exit(0);
 }
 EOCP
+	if $test "X$usecrosscompile" != X; then
+	$cat >try.c <<EOCP
+#include <stdio.h>
+#$i_stdlib I_STDLIB
+#ifdef I_STDLIB
+#include <stdlib.h>
+#endif
+
+	int PERL_INT_SIZE;
+    long PERL_LONG_SIZE;
+    short PERL_SHORT_SIZE;
+
+int main()
+{
+	exit(0);
+}
+EOCP
+    test_ints=$run
+    if $test "X$usecrosscompile" != X; then
+	    case "$src" in
+	        /*) test_ints=$src/Cross/scripts/test_ints
+	            ;;
+	        *)  pwd=`$test -f ../Configure & cd ..; pwd`
+	            test_ints=$pwd/Cross/scripts/test_ints
+	            ;;
+	    esac
+    fi
+
+    cat >$test_ints <<EOF
+#!/bin/sh
+file_to_check=\$1
+grep=\$2
+nm_check=(\`nm -p -t d -S \$file_to_check | \$grep 'PERL_' | cut -d" " -f2\`)
+## Will nm always sort the results in the same order?
+## manpage suggests default is alphabetic, but no way to force it?
+echo "intsize="\$(expr \${nm_check[0]} + 0)
+echo "longsize="\$(expr \${nm_check[1]} + 0)
+echo "shortsize="\$(expr \${nm_check[2]} + 0)
+EOF
+    $chmod a+rx $test_ints
+	fi
+
 	set try
-	if eval $compile_ok && $run ./try > /dev/null; then
-		eval `$run ./try`
+	if eval $compile_ok && $test_ints ./try $grep > /dev/null; then
+		eval `$test_ints ./try $grep`
 		echo "Your integers are $intsize bytes long."
 		echo "Your long integers are $longsize bytes long."
 		echo "Your short integers are $shortsize bytes long."
