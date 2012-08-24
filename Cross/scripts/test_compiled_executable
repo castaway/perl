@@ -1,0 +1,9 @@
+#!/bin/sh
+
+## Linux variant of "is this a compiled executable". Should probably match 
+## "ELF" and the target arch as well..
+file_check=`file $1`
+case $file_check in
+*executable*)
+   echo "Ok"
+esac

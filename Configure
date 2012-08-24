@@ -5333,6 +5333,16 @@ rmlist="$rmlist pdp11"
 : coherency check
 echo " "
 echo "Checking your choice of C compiler and flags for coherency..." >&4
+test_compiles=$run
+if $test "X$usecrosscompile" != X; then
+	case "$src" in
+	/*) test_compiles=$src/Cross/scripts/test_compiled_executable
+	    ;;
+	*)  pwd=`$test -f ../Configure & cd ..; pwd`
+	    test_compiles=$pwd/Cross/scripts/test_compiled_executable
+	    ;;
+	esac
+fi
 $cat > try.c <<'EOF'
 #include <stdio.h>
 int main() { printf("Ok\n"); return(0); }
@@ -5350,15 +5360,15 @@ $cat >> try.msg <<EOM
 I used the command:
 
 	$*
-	$run ./try
+	$test_compiles ./try
 
 and I got the following output:
 
 EOM
 dflt=y
 if $sh -c "$cc -o try $optimize $ccflags $ldflags try.c $libs" >>try.msg 2>&1; then
-	if $sh -c "$run ./try " >>try.msg 2>&1; then
-		xxx=`$run ./try`
+	if $sh -c "$test_compiles ./try " >>try.msg 2>&1; then
+		xxx=`$test_compiles ./try`
 		case "$xxx" in
 		"Ok") dflt=n ;;
 		*)	echo 'The program compiled OK, but produced no output.' >> try.msg
