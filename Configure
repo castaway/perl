@@ -6035,9 +6035,48 @@ int main()
     exit(0);
 }
 EOCP
+
+	if $test "X$usecrosscompile" != X; then
+	$cat >try.c <<EOCP
+#include <stdio.h>
+#$i_stdlib I_STDLIB
+#ifdef I_STDLIB
+#include <stdlib.h>
+#endif
+
+    double PERL_DOUBLE_SIZE;
+
+int main()
+{
+	exit(0);
+}
+EOCP
+    test_doubles=$run
+    if $test "X$usecrosscompile" != X; then
+	    case "$src" in
+	        /*) test_doubles=$src/Cross/scripts/test_doubles
+	            ;;
+	        *)  pwd=`$test -f ../Configure & cd ..; pwd`
+	            test_doubles=$pwd/Cross/scripts/test_doubles
+	            ;;
+	    esac
+    fi
+
+    cat >$test_doubles <<EOF
+#!/bin/sh
+file_to_check=\$1
+grep=\$2
+nm_check=(\`nm -p -t d -S \$file_to_check | \$grep 'PERL_' | cut -d" " -f2\`)
+## Will nm always sort the results in the same order?
+## manpage suggests default is alphabetic, but no way to force it?
+echo \$(expr \${nm_check[0]} + 0)
+EOF
+    $chmod a+rx $test_doubles
+	fi
+
 	set try
 	if eval $compile_ok; then
-		doublesize=`$run ./try`
+		doublesize=`$test_doubles ./try $grep`
 		echo "Your double is $doublesize bytes long."
 	else
 		dflt='8'
@@ -6078,10 +6117,49 @@ int main()
 	printf("%d\n", sizeof(long double));
 }
 EOCP
+
+	if $test "X$usecrosscompile" != X; then
+	$cat >try.c <<EOCP
+#include <stdio.h>
+#$i_stdlib I_STDLIB
+#ifdef I_STDLIB
+#include <stdlib.h>
+#endif
+
+    long double PERL_DOUBLE_SIZE;
+
+int main()
+{
+	exit(0);
+}
+EOCP
+    test_doubles=$run
+    if $test "X$usecrosscompile" != X; then
+	    case "$src" in
+	        /*) test_doubles=$src/Cross/scripts/test_doubles
+	            ;;
+	        *)  pwd=`$test -f ../Configure & cd ..; pwd`
+	            test_doubles=$pwd/Cross/scripts/test_doubles
+	            ;;
+	    esac
+    fi
+
+    cat >$test_doubles <<EOF
+#!/bin/sh
+file_to_check=\$1
+grep=\$2
+nm_check=(\`nm -p -t d -S \$file_to_check | \$grep 'PERL_' | cut -d" " -f2\`)
+## Will nm always sort the results in the same order?
+## manpage suggests default is alphabetic, but no way to force it?
+echo \$(expr \${nm_check[0]} + 0)
+EOF
+    $chmod a+rx $test_doubles
+	fi
+
 	set try
 	set try
 	if eval $compile; then
-		longdblsize=`$run ./try`
+		longdblsize=`$test_doubles ./try $grep`
 		echo "Your long doubles are $longdblsize bytes long."
 	else
 		dflt='8'
