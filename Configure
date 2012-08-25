@@ -2367,6 +2367,20 @@ touch
 tr
 uniq
 "
+
+: Check for Cross-Compilation
+case "$usecrosscompile" in
+*-) # eg arm-linux-androideadbi-
+	echo "Cross-compiling..."
+    toolprefix=$usecrosscompile
+    ar_name=${toolprefix}ar
+    nm_name=${toolprefix}nm
+    cpp_name=${toolprefix}cpp
+    gcov_name=${toolprefix}gcov
+    # set cc here later when we set platform etc
+esac    
+#    echo "NM set to $nm"
+
 trylist="
 ar
 bison
@@ -2425,30 +2439,37 @@ echo " "
 echo "Don't worry if any of the following aren't found..."
 say=offhand
 for file in $trylist; do
-	eval xxx=\$$file
+    name=$file
+    # filename may be different from variable name: (for cross-compiling)
+    eval temp_name=${file}_name
+    eval actual_name=\$$temp_name
+    if test "X$actual_name" != "X"; then
+        file=${actual_name}
+    fi
+	eval xxx=$file
 	case "$xxx" in
 	/*|?:[\\/]*)
 		if test -f "$xxx"; then
 			: ok
 		else
 			echo "WARNING: no $xxx -- ignoring your setting for $file." >&4
-			xxx=`./loc $file $file $pth`
+			xxx=`./loc $name $name $pth`
 		fi
 		;;
-	'') xxx=`./loc $file $file $pth`;;
+	'') xxx=`./loc $name $name $pth`;;
 	*) xxx=`./loc $xxx $xxx $pth`;;
 	esac
-	eval $file=$xxx$_exe
-	eval _$file=$xxx
+	eval $name=$xxx$_exe
+	eval _$name=$xxx
 	case "$xxx" in
 	/*)
-		echo $file is in $xxx.
+		echo $name is in $xxx.
 		;;
 	?:[\\/]*)
-		echo $file is in $xxx.
+		echo $name is in $xxx.
 		;;
 	*)
-		echo "I don't see $file out there, $say."
+		echo "I don't see $name out there, $say."
 		say=either
 		;;
 	esac
@@ -2781,15 +2802,7 @@ $define|true|[yY]*)
 	;;
 esac
 
-: Check for Cross-Compilation
-case "$usecrosscompile" in
-*-) # eg arm-linux-androideadbi-
-	$echo "Cross-compiling..."
-    toolprefix=$usecrosscompile
-    ar=$toolprefix-ar
-    nm=$toolprefix-nm
-    # set cc here later when we set platform etc
-esac    
+# -Dusecrosscompile=arm-linux-androideabi- 
 
 # case "$usecrosscompile" in
 # $define|true|[yY]*)
