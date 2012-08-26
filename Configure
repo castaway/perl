@@ -207,6 +207,7 @@ cppccsymbols=''
 cppsymbols=''
 from=''
 run=''
+sysroot=''
 targetarch=''
 to=''
 usecrosscompile=''
@@ -1953,6 +1954,14 @@ true)
 	;;
 esac
 
+: Set 'sysroot' to change the logical root directory to your headers and libraries see man gcc
+: This is primarily meant for cross-compile environments, and may fail to be useful in other cases
+
+if test "X$sysroot" != X; then
+  echo "Using $sysroot to find your headers and libraries"
+fi
+
+
 : Eunice requires " " instead of "", can you believe it
 echo " "
 : Here we go...
@@ -2440,7 +2449,7 @@ echo "Don't worry if any of the following aren't found..."
 say=offhand
 for file in $trylist; do
     name=$file
-    # filename may be different from variable name: (for cross-compiling)
+    : filename may be different from variable name: for cross-compiling
     eval temp_name=${file}_name
     eval actual_name=\$$temp_name
     if test "X$actual_name" != "X"; then
@@ -4761,14 +4770,21 @@ case "$libpth" in
 esac
 
 : Now check and see which directories actually exist, avoiding duplicates
+: Use sysroot for checking so we find cross-compiler dirs
 libpth=''
+: create list of actual paths on disk, for lib hunting later
+libsearchpth=''
 for xxx in $dlist
 do
-    if $test -d $xxx; then
+    if $test -d $sysroot$xxx; then
 		case " $libpth " in
 		*" $xxx "*) ;;
 		*) libpth="$libpth $xxx";;
 		esac
+        case " $libsearchpth " in
+		*" $sysroot$xxx "*) ;;
+		*) libsearchpth="$libsearchpth $sysroot$xxx";;
+		esac            
     fi
 done
 $cat <<'EOM'
@@ -4797,7 +4813,7 @@ esac
 : compute shared library extension
 case "$so" in
 '')
-	if xxx=`./loc libc.sl X $libpth`; $test -f "$xxx"; then
+	if xxx=`./loc libc.sl X $libsearchpth`; $test -f "$xxx"; then
 		dflt='sl'
 	else
 		dflt='so'
@@ -4944,9 +4960,10 @@ libsfound=''
 libsfiles=''
 libsdirs=''
 libspath=''
-for thisdir in $libpth $xlibpth; do
+for thisdir in $libsearchpth $xlibpth; do
   test -d $thisdir && libspath="$libspath $thisdir"
 done
+: libspath now has sysroot prepended, it appears that libpth is used from Config however, so we should be fine?
 for thislib in $libswanted; do
 	for thisdir in $libspath; do
 	    xxx=''
