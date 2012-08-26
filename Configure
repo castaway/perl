@@ -5629,7 +5629,7 @@ EOCP
 #!/bin/sh
 file_to_check=\$1
 grep=\$2
-nm_check=(\`nm -p -t d -S \$file_to_check | \$grep 'PERL_' | cut -d" " -f2\`)
+nm_check=(\`$nm -p -t d -S \$file_to_check | \$grep 'PERL_' | cut -d" " -f2\`)
 ## Will nm always sort the results in the same order?
 ## manpage suggests default is alphabetic, but no way to force it?
 echo "intsize="\$(expr \${nm_check[0]} + 0)
@@ -5729,7 +5729,7 @@ EOCP
 #!/bin/sh
 file_to_check=\$1
 grep=\$2
-nm_check=(\`nm -p -t d -S \$file_to_check | \$grep 'PERL_' | cut -d" " -f2\`)
+nm_check=(\`$nm -p -t d -S \$file_to_check | \$grep 'PERL_' | cut -d" " -f2\`)
 ## Will nm always sort the results in the same order?
 ## manpage suggests default is alphabetic, but no way to force it?
 echo \$(expr \${nm_check[0]} + 0)
@@ -6096,7 +6096,7 @@ EOCP
 #!/bin/sh
 file_to_check=\$1
 grep=\$2
-nm_check=(\`nm -p -t d -S \$file_to_check | \$grep 'PERL_' | cut -d" " -f2\`)
+nm_check=(\`$nm -p -t d -S \$file_to_check | \$grep 'PERL_' | cut -d" " -f2\`)
 ## Will nm always sort the results in the same order?
 ## manpage suggests default is alphabetic, but no way to force it?
 echo \$(expr \${nm_check[0]} + 0)
@@ -6178,7 +6178,7 @@ EOCP
 #!/bin/sh
 file_to_check=\$1
 grep=\$2
-nm_check=(\`nm -p -t d -S \$file_to_check | \$grep 'PERL_' | cut -d" " -f2\`)
+nm_check=(\`$nm -p -t d -S \$file_to_check | \$grep 'PERL_' | cut -d" " -f2\`)
 ## Will nm always sort the results in the same order?
 ## manpage suggests default is alphabetic, but no way to force it?
 echo \$(expr \${nm_check[0]} + 0)
@@ -6968,7 +6968,7 @@ EOCP
 #!/bin/sh
 file_to_check=\$1
 grep=\$2
-nm_check=(\`nm -p -t d -S \$file_to_check | \$grep 'PERL_' | cut -d" " -f2\`)
+nm_check=(\`$nm -p -t d -S \$file_to_check | \$grep 'PERL_' | cut -d" " -f2\`)
 ## Will nm always sort the results in the same order?
 ## manpage suggests default is alphabetic, but no way to force it?
 echo \$(expr \${nm_check[0]} + 0)
