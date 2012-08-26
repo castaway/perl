@@ -7733,17 +7733,17 @@ case "$libs" in
 		;;
 	-l*)
 		thislib=`echo $thislib | $sed -e 's/^-l//'`
-		if try=`./loc lib$thislib.$so.'*' X $libpth`; $test -f "$try"; then
+		if try=`./loc lib$thislib.$so.'*' X $libsearchpth`; $test -f "$try"; then
 			:
-		elif try=`./loc lib$thislib.$so X $libpth`; $test -f "$try"; then
+		elif try=`./loc lib$thislib.$so X $libsearchpth`; $test -f "$try"; then
 			:
-		elif try=`./loc lib$thislib$_a X $libpth`; $test -f "$try"; then
+		elif try=`./loc lib$thislib$_a X $libsearchpth`; $test -f "$try"; then
 			:
-		elif try=`./loc $thislib$_a X $libpth`; $test -f "$try"; then
+		elif try=`./loc $thislib$_a X $libsearchpth`; $test -f "$try"; then
 			:
-		elif try=`./loc lib$thislib X $libpth`; $test -f "$try"; then
+		elif try=`./loc lib$thislib X $libsearchpth`; $test -f "$try"; then
 			:
-		elif try=`./loc $thislib X $libpth`; $test -f "$try"; then
+		elif try=`./loc $thislib X $libsearchpth`; $test -f "$try"; then
 			:
 		elif try=`./loc Slib$thislib$_a X $xlibpth`; $test -f "$try"; then
 			:
@@ -7760,8 +7760,8 @@ esac
 xxx=normal
 case "$libc" in
 unknown)
-	set /lib/libc.$so
-	for xxx in $libpth; do
+	set $sysroot/lib/libc.$so
+	for xxx in $libsearchpth; do
 		$test -r $1 || set $xxx/libc.$so
 		: The messy sed command sorts on library version numbers.
 		$test -r $1 || \
