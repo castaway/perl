@@ -8018,14 +8018,34 @@ int main(void)
 #endif
 }
 EOCP
-set try
-if eval $compile_ok && $run ./try; then
-	val="$define"
+
+if $test "X$usecrosscompile" != X; then
+  $cat >try.c <<EOM
+#include <stdio.h>
+#ifdef __cplusplus
+	PERL_CONFIG_MARKER cpp=0
+#else
+	PERL_CONFIG_MARKER cpp=1
+#endif
+EOM
+  val=`$cc -v -E try.c 2>&1 | $grep PERL_CONFIG_MARKER | sed 's/PERL_CONFIG_MARKER cpp=//' | sed 's/"//g'`
+  if $test $val != 1; then
+      val="$define"
 	echo "You are using a C++ compiler."
+  else
+      val="$undef"
+  fi
 else
+  set try
+  if eval $compile_ok && $run ./try; then
+ 	val="$define" 
+	echo "You are using a C++ compiler."
+  else
 	val="$undef"
 	echo "You are not using a C++ compiler."
+  fi
 fi
+
 $rm_try cplusplus$$
 set d_cplusplus
 eval $setvar
