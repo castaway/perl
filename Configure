@@ -8261,7 +8261,18 @@ int main() {
 		exit(1); /* fail */
 }
 EOM
-	if $cc $ccflags $ldflags try.c >/dev/null 2>&1 && $run ./a.out; then
+    test_compiles=$run
+    if $test "X$usecrosscompile" != X; then
+ 	    case "$src" in
+	        /*) test_compiles=$src/Cross/scripts/test_compiled_executable
+	            ;;
+	        *)  pwd=`$test -f ../Configure & cd ..; pwd`
+	            test_compiles=$pwd/Cross/scripts/test_compiled_executable
+	            ;;
+	    esac
+    fi
+
+	if $cc $ccflags $ldflags try.c >/dev/null 2>&1 && $test_compiles ./a.out; then
 		bin_ELF="$define"
 	fi
 	$rm_try

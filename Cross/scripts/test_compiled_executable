@@ -4,6 +4,6 @@
 ## "ELF" and the target arch as well..
 file_check=`file $1`
 case $file_check in
-*executable*)
+*ELF*executable*)
    echo "Ok"
 esac
