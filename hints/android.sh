@@ -1,25 +1,19 @@
-# hints/linux.sh
-# Original version by rsanders
-# Additional support by Kenneth Albanowski <kjahds@kjahds.com>
-#
-# ELF support by H.J. Lu <hjl@nynexst.com>
-# Additional info from Nigel Head <nhead@ESOC.bitnet>
-# and Kenneth Albanowski <kjahds@kjahds.com>
-#
-# Consolidated by Andy Dougherty <doughera@lafayette.edu>
-#
-# Updated Thu Feb  8 11:56:10 EST 1996
-
-# Updated Thu May 30 10:50:22 EDT 1996 by <doughera@lafayette.edu>
-
-# Updated Fri Jun 21 11:07:54 EDT 1996
-# NDBM support for ELF re-enabled by <kjahds@kjahds.com>
+# hints/android.sh
+# Original version by jrobinson
 
 # No version of Linux supports setuid scripts.
 d_suidsafe='undef'
 
 # No version of Linux needs libutil for perl.
 i_libutil='undef'
+
+# We cant test for double formatting:
+sPRIfldbl='"f"'
+sPRIgldbl='"g"'
+sPRIeldbl='"e"'
+sPRIFUldbl='"F"'
+sPRIGUldbl='"G"'
+sPRIEUldbl='"E"'
 
 # Debian and Red Hat, and perhaps other vendors, provide both runtime and
 # development packages for some libraries.  The runtime packages contain shared
