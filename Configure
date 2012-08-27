@@ -9504,9 +9504,47 @@ int main()
     return(0);
 }
 EOCP
+	if $test "X$usecrosscompile" != X; then
+	$cat >try.c <<EOCP
+#include <stdio.h>
+#$i_stdlib I_STDLIB
+#ifdef I_STDLIB
+#include <stdlib.h>
+#endif
+
+    $lseektype PERL_FILE_OFFSET_SIZE;
+
+int main()
+{
+	exit(0);
+}
+EOCP
+
+    test_fileoffsets=$run
+    if $test "X$usecrosscompile" != X; then
+	    case "$src" in
+	        /*) test_fileoffsets=$src/Cross/scripts/test_fileoffsets
+	            ;;
+	        *)  pwd=`$test -f ../Configure & cd ..; pwd`
+	            test_fileoffsets=$pwd/Cross/scripts/test_fileoffsets
+	            ;;
+	    esac
+    fi
+
+    cat >$test_fileoffsets <<EOF
+#!/bin/sh
+file_to_check=\$1
+grep=\$2
+nm_check=(\`$nm -p -t d -S \$file_to_check | \$grep 'PERL_' | cut -d" " -f2\`)
+## Will nm always sort the results in the same order?
+## manpage suggests default is alphabetic, but no way to force it?
+echo \$(expr \${nm_check[0]} + 0)
+EOF
+    $chmod a+rx $test_fileoffsets
+	fi
 set try
 if eval $compile_ok; then
-	lseeksize=`$run ./try`
+	lseeksize=`$test_fileoffsets ./try $grep`
 	echo "Your file offsets are $lseeksize bytes long."
 else
 	dflt=$longsize
@@ -9542,9 +9580,48 @@ int main() {
     exit(0);
 }
 EOCP
+
+	if $test "X$usecrosscompile" != X; then
+	$cat >try.c <<EOCP
+#include <stdio.h>
+#$i_stdlib I_STDLIB
+#ifdef I_STDLIB
+#include <stdlib.h>
+#endif
+
+    $fpostype PERL_FPOS_TYPE;
+
+int main()
+{
+	exit(0);
+}
+EOCP
+    test_fpostypes=$run
+    if $test "X$usecrosscompile" != X; then
+	    case "$src" in
+	        /*) test_fpostypes=$src/Cross/scripts/test_fpostypes
+	            ;;
+	        *)  pwd=`$test -f ../Configure & cd ..; pwd`
+	            test_fpostypes=$pwd/Cross/scripts/test_fpostypes
+	            ;;
+	    esac
+    fi
+
+    cat >$test_fpostypes <<EOF
+#!/bin/sh
+file_to_check=\$1
+grep=\$2
+nm_check=(\`$nm -p -t d -S \$file_to_check | \$grep 'PERL_' | cut -d" " -f2\`)
+## Will nm always sort the results in the same order?
+## manpage suggests default is alphabetic, but no way to force it?
+echo \$(expr \${nm_check[0]} + 0)
+EOF
+    $chmod a+rx $test_fpostypes
+	fi
+
 set try
 if eval $compile_ok; then
-	yyy=`$run ./try`
+	yyy=`$test_fpostypes ./try $grep`
 	case "$yyy" in
 	'')	fpossize=4
 		echo "(I can't execute the test program--guessing $fpossize.)" >&4
@@ -9622,9 +9699,49 @@ int main()
     return(0);
 }
 EOCP
+
+	    if $test "X$usecrosscompile" != X; then
+	        $cat >try.c <<EOCP
+#include <stdio.h>
+#$i_stdlib I_STDLIB
+#ifdef I_STDLIB
+#include <stdlib.h>
+#endif
+
+    $lseektype PERL_FILE_OFFSET_SIZE;
+
+int main()
+{
+	exit(0);
+}
+EOCP
+
+            test_fileoffsets=$run
+            if $test "X$usecrosscompile" != X; then
+	            case "$src" in
+	                /*) test_fileoffsets=$src/Cross/scripts/test_fileoffsets
+	                    ;;
+	                *)  pwd=`$test -f ../Configure & cd ..; pwd`
+	                    test_fileoffsets=$pwd/Cross/scripts/test_fileoffsets
+	                    ;;
+	            esac
+            fi
+
+            cat >$test_fileoffsets <<EOF
+#!/bin/sh
+file_to_check=\$1
+grep=\$2
+nm_check=(\`$nm -p -t d -S \$file_to_check | \$grep 'PERL_' | cut -d" " -f2\`)
+## Will nm always sort the results in the same order?
+## manpage suggests default is alphabetic, but no way to force it?
+echo \$(expr \${nm_check[0]} + 0)
+EOF
+            $chmod a+rx $test_fileoffsets
+	fi
+
 		set try
 		if eval $compile_ok; then
-			lseeksize=`$run ./try`
+			lseeksize=`$test_fileoffsets ./try $grep`
 			$echo "Your file offsets are now $lseeksize bytes long."
 		else
 			dflt="$lseeksize"
@@ -9651,9 +9768,48 @@ int main() {
     return(0);
 }
 EOCP
+
+	if $test "X$usecrosscompile" != X; then
+	$cat >try.c <<EOCP
+#include <stdio.h>
+#$i_stdlib I_STDLIB
+#ifdef I_STDLIB
+#include <stdlib.h>
+#endif
+
+    $fpostype PERL_FPOS_TYPE;
+
+int main()
+{
+	exit(0);
+}
+EOCP
+    test_fpostypes=$run
+    if $test "X$usecrosscompile" != X; then
+	    case "$src" in
+	        /*) test_fpostypes=$src/Cross/scripts/test_fpostypes
+	            ;;
+	        *)  pwd=`$test -f ../Configure & cd ..; pwd`
+	            test_fpostypes=$pwd/Cross/scripts/test_fpostypes
+	            ;;
+	    esac
+    fi
+
+    cat >$test_fpostypes <<EOF
+#!/bin/sh
+file_to_check=\$1
+grep=\$2
+nm_check=(\`$nm -p -t d -S \$file_to_check | \$grep 'PERL_' | cut -d" " -f2\`)
+## Will nm always sort the results in the same order?
+## manpage suggests default is alphabetic, but no way to force it?
+echo \$(expr \${nm_check[0]} + 0)
+EOF
+    $chmod a+rx $test_fpostypes
+	fi
+
 		set try
 		if eval $compile_ok; then
-			yyy=`$run ./try`
+			yyy=`$test_fpostypes ./try $grep`
 			dflt="$lseeksize"
 			case "$yyy" in
 			'')	echo " "
@@ -10200,18 +10356,21 @@ for xxx_convert in $xxx_list; do
 	set try -DTRY_$xxx_convert
 	if eval $compile; then
 		echo "$xxx_convert() found." >&4
-		if $run ./try; then
-			echo "I'll use $xxx_convert to convert floats into a string." >&4
-			break;
-		else
-			echo "...But $xxx_convert didn't work as I expected."
-			xxx_convert=''
-		fi
+        if $test "X$usecrosscompile" != "X"; then
+            echo "You're cross-compiling so I'm going to let this default to sprintf, set d_Gconvert in your hints file if you want to fix this" >&4
+        else
+		    if $run ./try; then
+			    echo "I'll use $xxx_convert to convert floats into a string." >&4
+			    break;
+		    else
+			    echo "...But $xxx_convert didn't work as I expected."
+			    xxx_convert=''
+		    fi
+        fi
 	else
 		echo "$xxx_convert NOT found." >&4
 	fi
 done
-
 if test X$xxx_convert = X; then
     echo "*** WHOA THERE!!! ***" >&4
     echo "None of ($xxx_list)  seemed to work properly.  I'll use sprintf." >&4
