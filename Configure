@@ -11078,10 +11078,17 @@ int main()
 	exit(1);
 }
 EOP
-	if $cc -o try -DTRY_BSD_PGRP $ccflags $ldflags try.c $libs >/dev/null 2>&1 && $run ./try; then
+
+    test_pgrp=$run
+    if $test "X$usecrosscompile"; then
+        : It appears that getpgrp stopped taking an arg in BSD 4.3, and its now POSIXy anyway
+        test_getpgrp=true
+    fi
+
+	if $cc -o try -DTRY_BSD_PGRP $ccflags $ldflags try.c $libs >/dev/null 2>&1 && $test_pgrp ./try; then
 		echo "You have to use getpgrp(pid) instead of getpgrp()." >&4
 		val="$define"
-	elif $cc -o try $ccflags $ldflags try.c $libs >/dev/null 2>&1 && $run ./try; then
+	elif $cc -o try $ccflags $ldflags try.c $libs >/dev/null 2>&1 && $test_pgrp ./try; then
 		echo "You have to use getpgrp() instead of getpgrp(pid)." >&4
 		val="$undef"
 	else
