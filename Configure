@@ -11359,7 +11359,7 @@ esac
 $rm -f varargs*
 
 : see if the Compiler supports C99 variadic macros
-case "$i_stdarg$i_stdlib" in
+case "$i_stdarg$i_stdlib$d_c99_variadic_macros" in
     "$define$define")
     echo "You have <stdarg.h> and <stdlib.h>, so checking for C99 variadic macros." >&4
     $cat >try.c <<EOCP
@@ -11392,6 +11392,9 @@ EOCP
 	d_c99_variadic_macros="$undef"
     fi
     $rm_try
+    ;;
+    "$define$define"*)    
+    echo "You preset c_99_variadic_macros to $d_c99_variadic_macros, or the hints file did, leaving it alone" >&4
     ;;
     *)
     echo "You don't have <stdarg.h> and <stdlib.h>, so not checking for C99 variadic macros." >&4
