@@ -15,6 +15,27 @@ sPRIFUldbl='"F"'
 sPRIGUldbl='"G"'
 sPRIEUldbl='"E"'
 
+
+# Cant run the test for builtin_choose_expr or builtin_expect - looks like neither are actually used in the .c code anyway
+# Set to define if its a gcc?
+d_builtin_choose_expr='undef'
+d_builtin_expect='undef'
+
+# Test for variadic macros in C99?
+# Set to define if its a gcc?
+d_c99_variadic_macros="undef"
+
+# ?? - add "check if predefined" tests to these
+d_casti32='undef'
+d_castneg='undef'
+d_vprintf='undef'
+d_charvspr='undef'
+d_dlsymun='undef'
+
+
+# Can't run the tests for gconvert and pals either:
+# d_Gconvert - 
+
 # Debian and Red Hat, and perhaps other vendors, provide both runtime and
 # development packages for some libraries.  The runtime packages contain shared
 # libraries with version information in their names (e.g., libgdbm.so.1.7.3);
