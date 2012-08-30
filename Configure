@@ -12992,32 +12992,82 @@ int main() {
 #endif
 }
 EOCP
-: check sys/file.h first to get FREAD on Sun
-if $test `./findhdr sys/file.h` && \
-		set try -DI_SYS_FILE && eval $compile; then
-	h_sysfile=true;
-	echo "<sys/file.h> defines the O_* constants..." >&4
-	if $run ./try; then
-		echo "and you have the 3 argument form of open()." >&4
-		val="$define"
-	else
-		echo "but not the 3 argument form of open().  Oh, well." >&4
-		val="$undef"
-	fi
-elif $test `./findhdr fcntl.h` && \
-		set try -DI_FCNTL && eval $compile; then
-	h_fcntl=true;
-	echo "<fcntl.h> defines the O_* constants..." >&4
-	if $run ./try; then
-		echo "and you have the 3 argument form of open()." >&4
-		val="$define"
-	else
-		echo "but not the 3 argument form of open().  Oh, well." >&4
-		val="$undef"
-	fi
-else
+
+if $test "X$usecrosscompile" != X; then
+  $cat >try.c <<EOM
+#include <sys/types.h>
+#ifdef I_FCNTL
+#include <fcntl.h>
+#endif
+#ifdef I_SYS_FILE
+#include <sys/file.h>
+#endif
+#$i_stdlib I_STDLIB
+#ifdef I_STDLIB
+#include <stdlib.h>
+#endif
+int main() {
+	if(O_RDONLY);
+#ifdef O_TRUNC
+	PERL_CONFIG_MARKER open=0;
+#else
+	PERL_CONFIG_MARKER open=1;
+#endif
+}
+EOM
+
+  if $test `./findhdr sys/file.h`; then
+      val=`$cc -v -E -DI_SYS_FILE try.c 2>&1 | $grep PERL_CONFIG_MARKER | sed 's/PERL_CONFIG_MARKER open=//' | sed 's/"//g'`
+	  h_sysfile=true;
+      if $test $val != 1; then
+          val="$define"
+          echo "and you have the 3 argument form of open()." >&4
+      else
+	      echo "but not the 3 argument form of open().  Oh, well." >&4
+          val="$undef"
+      fi
+  elif $test `./findhdr fcntl.h`; then
+      val=`$cc -v -E -DI_FCNTL try.c 2>&1 | $grep PERL_CONFIG_MARKER | sed 's/PERL_CONFIG_MARKER open=//' | sed 's/"//g'`
+	  h_fcntl=true;
+      if $test $val != 1; then
+          val="$define"
+          echo "and you have the 3 argument form of open()." >&4
+      else
+	      echo "but not the 3 argument form of open().  Oh, well." >&4
+          val="$undef"
+      fi
+  else
 	val="$undef"
 	echo "I can't find the O_* constant definitions!  You got problems." >&4
+  fi
+else
+    : check sys/file.h first to get FREAD on Sun
+    if $test `./findhdr sys/file.h` && \
+	    set try -DI_SYS_FILE && eval $compile; then
+	    h_sysfile=true;
+	    echo "<sys/file.h> defines the O_* constants..." >&4
+	    if $run ./try; then
+		    echo "and you have the 3 argument form of open()." >&4
+		    val="$define"
+	    else
+		    echo "but not the 3 argument form of open().  Oh, well." >&4
+		    val="$undef"
+	    fi
+    elif $test `./findhdr fcntl.h` && \
+		set try -DI_FCNTL && eval $compile; then
+	    h_fcntl=true;
+	    echo "<fcntl.h> defines the O_* constants..." >&4
+	    if $run ./try; then
+		    echo "and you have the 3 argument form of open()." >&4
+		    val="$define"
+	    else
+		    echo "but not the 3 argument form of open().  Oh, well." >&4
+		    val="$undef"
+	    fi
+    else
+	    val="$undef"
+	    echo "I can't find the O_* constant definitions!  You got problems." >&4
+    fi
 fi
 set d_open3
 eval $setvar
