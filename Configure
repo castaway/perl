@@ -13789,20 +13789,70 @@ int main() {
 #endif
 }
 EOCP
+
+    if $test "X$usecrosscompile" != X; then
+        $cat >try_co.c <<EOM
+#$i_stdlib I_STDLIB
+#ifdef I_STDLIB
+#include <stdlib.h>
+#endif
+#$i_systime I_SYS_TIME
+#$i_sysselct I_SYS_SELECT
+#$d_socket HAS_SOCKET
+#include <sys/types.h>
+#ifdef HAS_SOCKET
+#include <sys/socket.h> /* Might include <sys/bsdtypes.h> */
+#endif
+#ifdef I_SYS_TIME
+#include <sys/time.h>
+#endif
+#ifdef I_SYS_SELECT
+#include <sys/select.h>
+#endif
+int main() {
+	fd_set fds;
+
+#ifdef TRYBITS
+	if(fds.fds_bits);
+#endif
+
+#if defined(FD_SET) && defined(FD_CLR) && defined(FD_ISSET) && defined(FD_ZERO)
+	PERL_CONFIG_MARKER fd=0
+#else
+	PERL_CONFIG_MARKER fd=1
+#endif
+}
+EOM
+fi
+
 set try -DTRYBITS
 if eval $compile; then
 	d_fds_bits="$define"
 	d_fd_set="$define"
 	echo "Well, your system knows about the normal fd_set typedef..." >&4
-	if $run ./try; then
-		echo "and you have the normal fd_set macros (just as I'd expect)." >&4
-		d_fd_macros="$define"
-	else
-		$cat >&4 <<'EOM'
+
+    if $test "X$usecrosscompile" != X; then
+        fd=`$cc -v -E -DTRYBITS try_co.c 2>&1 | $grep PERL_CONFIG_MARKER | sed 's/PERL_CONFIG_MARKER fd=//'`
+        if $test $fd != 1; then
+		    echo "and you have the normal fd_set macros (just as I'd expect)." >&4
+		    d_fd_macros="$define"
+        else
+		    $cat >&4 <<'EOM'
 but not the normal fd_set macros!  Gaaack!  I'll have to cover for you.
 EOM
-		d_fd_macros="$undef"
-	fi
+		    d_fd_macros="$undef"
+        fi
+    else
+	    if $run ./try; then
+		    echo "and you have the normal fd_set macros (just as I'd expect)." >&4
+		    d_fd_macros="$define"
+	    else
+		    $cat >&4 <<'EOM'
+but not the normal fd_set macros!  Gaaack!  I'll have to cover for you.
+EOM
+		    d_fd_macros="$undef"
+	    fi
+    fi
 else
 	$cat <<'EOM'
 Hmm, your compiler has some difficulty with fd_set.  Checking further...
@@ -13812,17 +13862,30 @@ EOM
 		d_fds_bits="$undef"
 		d_fd_set="$define"
 		echo "Well, your system has some sort of fd_set available..." >&4
-		if $run ./try; then
-			echo "and you have the normal fd_set macros." >&4
-			d_fd_macros="$define"
-		else
-			$cat <<'EOM'
+        if $test "X$usecrosscompile" != X; then
+            fd=`$cc -v -E try_co.c 2>&1 | $grep PERL_CONFIG_MARKER | sed 's/PERL_CONFIG_MARKER fd=//'`
+            if $test $fd != 1; then
+			    echo "and you have the normal fd_set macros." >&4
+			    d_fd_macros="$define"
+            else
+			    $cat <<'EOM'
 but not the normal fd_set macros!  Gross!  More work for me...
 EOM
-			d_fd_macros="$undef"
-		fi
+			    d_fd_macros="$undef"
+            fi
+        else
+		    if $run ./try; then
+			    echo "and you have the normal fd_set macros." >&4
+			    d_fd_macros="$define"
+		    else
+			    $cat <<'EOM'
+but not the normal fd_set macros!  Gross!  More work for me...
+EOM
+			    d_fd_macros="$undef"
+		    fi
+        fi
 	else
-	echo "Well, you got zip.  That's OK, I can roll my own fd_set stuff." >&4
+	    echo "Well, you got zip.  That's OK, I can roll my own fd_set stuff." >&4
 		d_fd_set="$undef"
 		d_fds_bits="$undef"
 		d_fd_macros="$undef"
