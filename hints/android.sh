@@ -32,6 +32,11 @@ d_vprintf='undef'
 d_charvspr='undef'
 d_dlsymun='undef'
 
+## Rather complex test to figure this one out, using the value from config.sh-arm-linux-android
+eagain='EAGAIN'
+d_eofnblk='define'
+
+d_fcntl_can_lock='define'
 
 # Can't run the tests for gconvert and pals either:
 # d_Gconvert - 
