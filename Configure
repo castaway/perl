@@ -2378,14 +2378,17 @@ uniq
 "
 
 : Check for Cross-Compilation
-case "$usecrosscompile" in
+case "$crosscompileprefix" in
 *-) # eg arm-linux-androideadbi-
 	echo "Cross-compiling..."
-    toolprefix=$usecrosscompile
+    toolprefix=$crosscompileprefix
     ar_name=${toolprefix}ar
     nm_name=${toolprefix}nm
     cpp_name=${toolprefix}cpp
     gcov_name=${toolprefix}gcov
+    ;;
+'')
+  usecrosscompile='undef'
     # set cc here later when we set platform etc
 esac    
 #    echo "NM set to $nm"

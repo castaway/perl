@@ -28,7 +28,7 @@ d_c99_variadic_macros="undef"
 # ?? - add "check if predefined" tests to these
 d_casti32='undef'
 d_castneg='undef'
-d_vprintf='undef'
+d_vprintf='define'
 d_charvspr='undef'
 d_dlsymun='undef'
 
@@ -37,6 +37,43 @@ eagain='EAGAIN'
 d_eofnblk='define'
 
 d_fcntl_can_lock='define'
+
+# More non-simple C..
+d_nv_preserves_uv='define'
+nv_preserves_uv_bits='32'
+nv_overflows_integers_at='256.0*256.0*256.0*256.0*256.0*256.0*2.0*2.0*2.0*2.0*2.0'
+d_nv_zero_is_allbits_zero='undef'
+
+# The test for this uses the host system:
+d_procselfexe='define'
+
+# C program, convert:
+d_signbit='define'
+d_sigsetjmp='define'
+
+d_snprintf='undef'
+d_vsnprintf='define'
+
+# ??
+d_sprintf_returns_strlen='define'
+d_static_inline='define'
+
+# convert
+d_stdio_stream_array='undef'
+
+# ??
+d_strtol='define'
+d_strtoull='define'
+d_strtoull='define'
+d_void_closedir='undef'
+charbits=8
+
+
+## cross-compiling defaults this to 'ffff'
+byteorder='1234'
+## test for this uses byteorder value
+d_u32align='undef'
+
 
 # Can't run the tests for gconvert and pals either:
 # d_Gconvert - 
