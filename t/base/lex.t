@@ -1,6 +1,6 @@
 #!./perl
 
-print "1..65\n";
+print "1..75\n";
 
 $x = 'x';
 
@@ -197,7 +197,7 @@ my $test = 42;
     local $_ = "not ok ";
     eval q{
 	s/^not /<<EOT/e and T '^main:\(eval \d+\):2$', $test++;
-# fuggedaboudit
+# uggedaboudit
 EOT
         print $_, $test++, "\n";
 	T('^main:\(eval \d+\):6$', $test++);
@@ -323,3 +323,52 @@ eval '/(?{print <<END
 ok 65 - here-doc in re-eval in string eval
 END
 })/';
+
+eval 'print qq ;ok 66 - eval ending with semicolon\n;'
+  or print "not ok 66 - eval ending with semicolon\n";
+
+print "not " unless qr/(?{<<END})/ eq '(?^:(?{<<END}))';
+foo
+END
+print "ok 67 - here-doc in single-line re-eval\n";
+
+$_ = qr/(?{"${<<END}"
+foo
+END
+})/;
+print "not " unless /foo/;
+print "ok 68 - here-doc in quotes in multiline re-eval\n";
+
+eval 's//<<END/e if 0; $_ = "a
+END
+b"';
+print "not " if $_ =~ /\n\n/;
+print "ok 69 - eval 's//<<END/' does not leave extra newlines\n";
+
+$_ = a;
+eval "s/a/'b\0'#/e";
+print 'not ' unless $_ eq "b\0";
+print "ok 70 - # after null in s/// repl\n";
+
+s//"#" . <<END/e;
+foo
+END
+print "ok 71 - s//'#' . <<END/e\n";
+
+eval "s//3}->{3/e";
+print "not " unless $@;
+print "ok 72 - s//3}->{3/e\n";
+
+$_ = "not ok 73";
+$x{3} = "not ";
+eval 's/${\%x}{3}//e';
+print "$_ - s//\${\\%x}{3}/e\n";
+
+eval 's/${foo#}//e';
+print "not " unless $@;
+print "ok 74 - s/\${foo#}//e\n";
+
+eval 'warn ({$_ => 1} + 1) if 0';
+print "not " if $@;
+print "ok 75 - listop({$_ => 1} + 1)\n";
+print "# $@" if $@;

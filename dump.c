@@ -943,6 +943,12 @@ Perl_do_op_dump(pTHX_ I32 level, PerlIO *file, const OP *o)
 		if (o->op_private & OPpLVAL_DEFER)
 		    sv_catpv(tmpsv, ",LVAL_DEFER");
 	    }
+	    else if (optype == OP_RV2HV || optype == OP_PADHV) {
+	      if (o->op_private & OPpMAYBE_TRUEBOOL)
+		sv_catpvs(tmpsv, ",OPpMAYBE_TRUEBOOL");
+	      if (o->op_private & OPpTRUEBOOL)
+		sv_catpvs(tmpsv, ",OPpTRUEBOOL");
+	    }
 	    else {
 		if (o->op_private & HINT_STRICT_REFS)
 		    sv_catpv(tmpsv, ",STRICT_REFS");
@@ -2050,6 +2056,10 @@ Perl_do_sv_dump(pTHX_ I32 level, PerlIO *file, SV *sv, I32 nest, I32 maxnest, bo
 				(UV)(r->pre_prefix));
 	    Perl_dump_indent(aTHX_ level, file, "  SUBLEN = %"IVdf"\n",
 				(IV)(r->sublen));
+	    Perl_dump_indent(aTHX_ level, file, "  SUBOFFSET = %"IVdf"\n",
+				(IV)(r->suboffset));
+	    Perl_dump_indent(aTHX_ level, file, "  SUBCOFFSET = %"IVdf"\n",
+				(IV)(r->subcoffset));
 	    if (r->subbeg)
 		Perl_dump_indent(aTHX_ level, file, "  SUBBEG = 0x%"UVxf" %s\n",
 			    PTR2UV(r->subbeg),
@@ -2123,6 +2133,8 @@ Perl_runops_debug(pTHX)
 	    if (DEBUG_t_TEST_) debop(PL_op);
 	    if (DEBUG_P_TEST_) debprof(PL_op);
 	}
+
+        OP_ENTRY_PROBE(OP_NAME(PL_op));
     } while ((PL_op = PL_op->op_ppaddr(aTHX)));
     DEBUG_l(Perl_deb(aTHX_ "leaving RUNOPS level\n"));
 

@@ -777,37 +777,11 @@ PP(pp_rv2av)
 	if (SvTYPE(sv) != type)
 	    /* diag_listed_as: Not an ARRAY reference */
 	    DIE(aTHX_ "Not %s reference", is_pp_rv2av ? an_array : a_hash);
-	if (PL_op->op_flags & OPf_REF) {
-	    SETs(sv);
-	    RETURN;
-	}
-	else if (PL_op->op_private & OPpMAYBE_LVSUB) {
-	  const I32 flags = is_lvalue_sub();
-	  if (flags && !(flags & OPpENTERSUB_INARGS)) {
-	    if (gimme != G_ARRAY)
-		goto croak_cant_return;
-	    SETs(sv);
-	    RETURN;
-	  }
-	}
 	else if (PL_op->op_flags & OPf_MOD
 		&& PL_op->op_private & OPpLVAL_INTRO)
 	    Perl_croak(aTHX_ "%s", PL_no_localize_ref);
     }
-    else {
-	if (SvTYPE(sv) == type) {
-	    if (PL_op->op_flags & OPf_REF) {
-		SETs(sv);
-		RETURN;
-	    }
-	    else if (LVRET) {
-		if (gimme != G_ARRAY)
-		    goto croak_cant_return;
-		SETs(sv);
-		RETURN;
-	    }
-	}
-	else {
+    else if (SvTYPE(sv) != type) {
 	    GV *gv;
 	
 	    if (!isGV_with_GP(sv)) {
@@ -822,11 +796,12 @@ PP(pp_rv2av)
 	    sv = is_pp_rv2av ? MUTABLE_SV(GvAVn(gv)) : MUTABLE_SV(GvHVn(gv));
 	    if (PL_op->op_private & OPpLVAL_INTRO)
 		sv = is_pp_rv2av ? MUTABLE_SV(save_ary(gv)) : MUTABLE_SV(save_hash(gv));
-	    if (PL_op->op_flags & OPf_REF) {
+    }
+    if (PL_op->op_flags & OPf_REF) {
 		SETs(sv);
 		RETURN;
-	    }
-	    else if (PL_op->op_private & OPpMAYBE_LVSUB) {
+    }
+    else if (PL_op->op_private & OPpMAYBE_LVSUB) {
 	      const I32 flags = is_lvalue_sub();
 	      if (flags && !(flags & OPpENTERSUB_INARGS)) {
 		if (gimme != G_ARRAY)
@@ -834,8 +809,6 @@ PP(pp_rv2av)
 		SETs(sv);
 		RETURN;
 	      }
-	    }
-	}
     }
 
     if (is_pp_rv2av) {
@@ -873,6 +846,11 @@ PP(pp_rv2av)
 	    *PL_stack_sp = sv;
 	    return Perl_do_kv(aTHX);
 	}
+	else if ((PL_op->op_private & OPpTRUEBOOL
+	      || (  PL_op->op_private & OPpMAYBE_TRUEBOOL
+		 && block_gimme() == G_VOID  ))
+	      && (!SvRMAGICAL(sv) || !mg_find(sv, PERL_MAGIC_tied)))
+	    SETs(HvUSEDKEYS(sv) ? &PL_sv_yes : sv_2mortal(newSViv(0)));
 	else if (gimme == G_SCALAR) {
 	    dTARGET;
 	    TARG = Perl_hv_scalar(aTHX_ MUTABLE_HV(sv));
@@ -1341,15 +1319,18 @@ PP(pp_match)
 	    }
 	}
     }
-    /* XXX: comment out !global get safe $1 vars after a
-       match, BUT be aware that this leads to dramatic slowdowns on
-       /g matches against large strings.  So far a solution to this problem
-       appears to be quite tricky.
-       Test for the unsafe vars are TODO for now. */
-    if (       (!global && RX_NPARENS(rx))
-	    || SvTEMP(TARG) || SvAMAGIC(TARG) || PL_sawampersand
-	    || (RX_EXTFLAGS(rx) & (RXf_EVAL_SEEN|RXf_PMf_KEEPCOPY)))
-	r_flags |= REXEC_COPY_STR;
+    if (       RX_NPARENS(rx)
+            || PL_sawampersand
+            || (RX_EXTFLAGS(rx) & (RXf_EVAL_SEEN|RXf_PMf_KEEPCOPY))
+    ) {
+	r_flags |= (REXEC_COPY_STR|REXEC_COPY_SKIP_PRE);
+        /* in @a =~ /(.)/g, we iterate multiple times, but copy the buffer
+         * only on the first iteration. Therefore we need to copy $' as well
+         * as $&, to make the rest of the string available for captures in
+         * subsequent iterations */
+        if (! (global && gimme == G_ARRAY))
+            r_flags |= REXEC_COPY_SKIP_POST;
+    };
 
   play_it_again:
     if (global && RX_OFFS(rx)[0].start != -1) {
@@ -1494,6 +1475,8 @@ yup:					/* Confirmed by INTUIT */
     if (global) {
 	/* FIXME - should rx->subbeg be const char *?  */
 	RX_SUBBEG(rx) = (char *) truebase;
+	RX_SUBOFFSET(rx) = 0;
+	RX_SUBCOFFSET(rx) = 0;
 	RX_OFFS(rx)[0].start = s - truebase;
 	if (RX_MATCH_UTF8(rx)) {
 	    char * const t = (char*)utf8_hop((U8*)s, RX_MINLENRET(rx));
@@ -1529,6 +1512,8 @@ yup:					/* Confirmed by INTUIT */
 #endif
 	}
 	RX_SUBLEN(rx) = strend - t;
+	RX_SUBOFFSET(rx) = 0;
+	RX_SUBCOFFSET(rx) = 0;
 	RX_MATCH_COPIED_on(rx);
 	off = RX_OFFS(rx)[0].start = s - t;
 	RX_OFFS(rx)[0].end = off + RX_MINLENRET(rx);
@@ -2149,9 +2134,13 @@ PP(pp_subst)
 	pm = PL_curpm;
 	rx = PM_GETRE(pm);
     }
-    r_flags = (RX_NPARENS(rx) || SvTEMP(TARG) || PL_sawampersand
-	    || (RX_EXTFLAGS(rx) & (RXf_EVAL_SEEN|RXf_PMf_KEEPCOPY)) )
-	       ? REXEC_COPY_STR : 0;
+
+    r_flags = (    RX_NPARENS(rx)
+                || PL_sawampersand
+                || (RX_EXTFLAGS(rx) & (RXf_EVAL_SEEN|RXf_PMf_KEEPCOPY))
+              )
+          ? REXEC_COPY_STR
+          : 0;
 
     orig = m = s;
     if (RX_EXTFLAGS(rx) & RXf_USE_INTUIT) {
@@ -2225,7 +2214,8 @@ PP(pp_subst)
 #ifdef PERL_OLD_COPY_ON_WRITE
 	&& !is_cow
 #endif
-	&& (I32)clen <= RX_MINLENRET(rx) && (once || !(r_flags & REXEC_COPY_STR))
+        && (I32)clen <= RX_MINLENRET(rx)
+        && (once || !(r_flags & REXEC_COPY_STR))
 	&& !(RX_EXTFLAGS(rx) & RXf_LOOKBEHIND_SEEN)
 	&& (!doutf8 || SvUTF8(TARG))
 	&& !(rpm->op_pmflags & PMf_NONDESTRUCT))
@@ -2353,6 +2343,7 @@ PP(pp_subst)
 	    if (RX_MATCH_COPIED(rx) && RX_SUBBEG(rx) != orig) {
 		m = s;
 		s = orig;
+                assert(RX_SUBOFFSET(rx) == 0);
 		orig = RX_SUBBEG(rx);
 		s = orig + (m - s);
 		strend = s + (strend - m);

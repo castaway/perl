@@ -28,7 +28,7 @@ BEGIN {
     }
 }
 
-plan(34);
+plan(73);
 
 my $rc_filename = '.perldb';
 
@@ -367,7 +367,7 @@ sub _run {
         ::runperl(
             switches =>
             [
-                '-d', 
+                '-d',
                 ($self->_include_t ? ('-I', '../lib/perl5db/t') : ())
             ],
             stderr => 1,
@@ -388,11 +388,25 @@ sub output_like {
     ::like($self->_output(), $re, $msg);
 }
 
+sub output_unlike {
+    my ($self, $re, $msg) = @_;
+
+    local $::Level = $::Level + 1;
+    ::unlike($self->_output(), $re, $msg);
+}
+
 sub contents_like {
     my ($self, $re, $msg) = @_;
 
     local $::Level = $::Level + 1;
     ::like($self->_contents(), $re, $msg);
+}
+
+sub contents_unlike {
+    my ($self, $re, $msg) = @_;
+
+    local $::Level = $::Level + 1;
+    ::unlike($self->_contents(), $re, $msg);
 }
 
 package main;
@@ -689,11 +703,11 @@ package main;
             "'" . quotemeta($prog_fn) . "' line %s\\n",
             (map { quotemeta($_) } @$_)
             )
-        } 
+        }
         (
             ['.', 'main::baz', 14,],
             ['.', 'main::bar', 9,],
-            ['.', 'main::foo', 6]
+            ['.', 'main::foo', 6],
         )
     );
     $wrapper->contents_like(
@@ -899,6 +913,734 @@ package main;
             5:\s+print\ "2\\n";\n
         /msx,
         'l statement is working properly (test No. 1).',
+    );
+}
+
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'l',
+                q/# After l 1/,
+                'l',
+                q/# After l 2/,
+                '-',
+                q/# After -/,
+                'q',
+            ],
+            prog => '../lib/perl5db/t/test-l-statement-1',
+        }
+    );
+
+    my $first_l_out = qr/
+        1==>\s+\$x\ =\ 1;\n
+        2:\s+print\ "1\\n";\n
+        3\s*\n
+        4:\s+\$x\ =\ 2;\n
+        5:\s+print\ "2\\n";\n
+        6\s*\n
+        7:\s+\$x\ =\ 3;\n
+        8:\s+print\ "3\\n";\n
+        9\s*\n
+        10:\s+\$x\ =\ 4;\n
+    /msx;
+
+    my $second_l_out = qr/
+        11:\s+print\ "4\\n";\n
+        12\s*\n
+        13:\s+\$x\ =\ 5;\n
+        14:\s+print\ "5\\n";\n
+        15\s*\n
+        16:\s+\$x\ =\ 6;\n
+        17:\s+print\ "6\\n";\n
+        18\s*\n
+        19:\s+\$x\ =\ 7;\n
+        20:\s+print\ "7\\n";\n
+    /msx;
+    $wrapper->contents_like(
+        qr/
+            ^$first_l_out
+            [^\n]*?DB<\d+>\ \#\ After\ l\ 1\n
+            [\ \t]*\n
+            [^\n]*?DB<\d+>\ l\s*\n
+            $second_l_out
+            [^\n]*?DB<\d+>\ \#\ After\ l\ 2\n
+            [\ \t]*\n
+            [^\n]*?DB<\d+>\ -\s*\n
+            $first_l_out
+            [^\n]*?DB<\d+>\ \#\ After\ -\n
+        /msx,
+        'l followed by l and then followed by -',
+    );
+}
+
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'l fact',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/test-l-statement-2',
+        }
+    );
+
+    my $first_l_out = qr/
+        6\s+sub\ fact\ \{\n
+        7:\s+my\ \$n\ =\ shift;\n
+        8:\s+if\ \(\$n\ >\ 1\)\ \{\n
+        9:\s+return\ \$n\ \*\ fact\(\$n\ -\ 1\);
+    /msx;
+
+    $wrapper->contents_like(
+        qr/
+            DB<1>\s+l\ fact\n
+            $first_l_out
+        /msx,
+        'l subroutine_name',
+    );
+}
+
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'b fact',
+                'c',
+                # Repeat several times to avoid @typeahead problems.
+                '.',
+                '.',
+                '.',
+                '.',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/test-l-statement-2',
+        }
+    );
+
+    my $line_out = qr /
+        ^main::fact\([^\n]*?:7\):\n
+        ^7:\s+my\ \$n\ =\ shift;\n
+    /msx;
+
+    $wrapper->contents_like(
+        qr/
+            $line_out
+            $line_out
+        /msx,
+        'Test the "." command',
+    );
+}
+
+# Testing that the f command works.
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'f ../lib/perl5db/t/MyModule.pm',
+                'b 12',
+                'c',
+                q/do { use IO::Handle; STDOUT->autoflush(1); print "Var=$var\n"; }/,
+                'c',
+                'q',
+            ],
+            include_t => 1,
+            prog => '../lib/perl5db/t/filename-line-breakpoint'
+        }
+    );
+
+    $wrapper->output_like(qr/
+        ^Var=Bar$
+            .*
+        ^In\ MyModule\.$
+            .*
+        ^In\ Main\ File\.$
+            .*
+        /msx,
+        "f command is working.",
+    );
+}
+
+# We broke the /pattern/ command because apparently the CORE::eval-s inside
+# lib/perl5db.pl cannot handle lexical variable properly. So we now fix this
+# bug.
+#
+# TODO :
+#
+# 1. Go over the rest of the "eval"s in lib/perl5db.t and see if they cause
+# problems.
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                '/for/',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/eval-line-bug',
+        }
+    );
+
+    $wrapper->contents_like(
+        qr/12: \s* for\ my\ \$q\ \(1\ \.\.\ 10\)\ \{/msx,
+        "/pat/ command is working and found a match.",
+    );
+}
+
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'b 22',
+                'c',
+                '?for?',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/eval-line-bug',
+        }
+    );
+
+    $wrapper->contents_like(
+        qr/12: \s* for\ my\ \$q\ \(1\ \.\.\ 10\)\ \{/msx,
+        "?pat? command is working and found a match.",
+    );
+}
+
+# Test the L command.
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'b 6',
+                'b 13 ($q == 5)',
+                'L',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/eval-line-bug',
+        }
+    );
+
+    $wrapper->contents_like(
+        qr#
+        ^\S*?eval-line-bug:\n
+        \s*6:\s*my\ \$i\ =\ 5;\n
+        \s*break\ if\ \(1\)\n
+        \s*13:\s*\$i\ \+=\ \$q;\n
+        \s*break\ if\ \(\(\$q\ ==\ 5\)\)\n
+        #msx,
+        "L command is listing breakpoints",
+    );
+}
+
+# Test the L command for watch expressions.
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'w (5+6)',
+                'L',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/eval-line-bug',
+        }
+    );
+
+    $wrapper->contents_like(
+        qr#
+        ^Watch-expressions:\n
+        \s*\(5\+6\)\n
+        #msx,
+        "L command is listing watch expressions",
+    );
+}
+
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'w (5+6)',
+                'w (11*23)',
+                'W (5+6)',
+                'L',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/eval-line-bug',
+        }
+    );
+
+    $wrapper->contents_like(
+        qr#
+        ^Watch-expressions:\n
+        \s*\(11\*23\)\n
+        ^auto\(
+        #msx,
+        "L command is not listing deleted watch expressions",
+    );
+}
+
+# Test the L command.
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'b 6',
+                'a 13 print $i',
+                'L',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/eval-line-bug',
+        }
+    );
+
+    $wrapper->contents_like(
+        qr#
+        ^\S*?eval-line-bug:\n
+        \s*6:\s*my\ \$i\ =\ 5;\n
+        \s*break\ if\ \(1\)\n
+        \s*13:\s*\$i\ \+=\ \$q;\n
+        \s*action:\s+print\ \$i\n
+        #msx,
+        "L command is listing actions and breakpoints",
+    );
+}
+
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'S',
+                'q',
+            ],
+            prog =>  '../lib/perl5db/t/rt-104168',
+        }
+    );
+
+    $wrapper->contents_like(
+        qr#
+        ^main::bar\n
+        main::baz\n
+        main::foo\n
+        #msx,
+        "S command - 1",
+    );
+}
+
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'S ^main::ba',
+                'q',
+            ],
+            prog =>  '../lib/perl5db/t/rt-104168',
+        }
+    );
+
+    $wrapper->contents_like(
+        qr#
+        ^main::bar\n
+        main::baz\n
+        auto\(
+        #msx,
+        "S command with regex",
+    );
+}
+
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'S !^main::ba',
+                'q',
+            ],
+            prog =>  '../lib/perl5db/t/rt-104168',
+        }
+    );
+
+    $wrapper->contents_unlike(
+        qr#
+        ^main::ba
+        #msx,
+        "S command with negative regex",
+    );
+
+    $wrapper->contents_like(
+        qr#
+        ^main::foo\n
+        #msx,
+        "S command with negative regex - what it still matches",
+    );
+}
+
+# Test the a command.
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'a 13 print "\nVar<Q>=$q\n"',
+                'c',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/eval-line-bug',
+        }
+    );
+
+    $wrapper->output_like(qr#
+        \nVar<Q>=1\n
+        \nVar<Q>=2\n
+        \nVar<Q>=3\n
+        #msx,
+        "a command is working",
+    );
+}
+
+# Test the 'A' command
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'a 13 print "\nVar<Q>=$q\n"',
+                'A 13',
+                'c',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/eval-line-bug',
+        }
+    );
+
+    $wrapper->output_like(
+        qr#\A\z#msx, # The empty string.
+        "A command (for removing actions) is working",
+    );
+}
+
+# Test the 'A *' command
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'a 6 print "\nFail!\n"',
+                'a 13 print "\nVar<Q>=$q\n"',
+                'A *',
+                'c',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/eval-line-bug',
+        }
+    );
+
+    $wrapper->output_like(
+        qr#\A\z#msx, # The empty string.
+        "'A *' command (for removing all actions) is working",
+    );
+}
+
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'n',
+                'w $foo',
+                'c',
+                'print "\nIDX=<$idx>\n"',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/test-w-statement-1',
+        }
+    );
+
+
+    $wrapper->contents_like(qr#
+        \$foo\ changed:\n
+        \s+old\ value:\s+'1'\n
+        \s+new\ value:\s+'2'\n
+        #msx,
+        'w command - watchpoint changed',
+    );
+    $wrapper->output_like(qr#
+        \nIDX=<20>\n
+        #msx,
+        "w command - correct output from IDX",
+    );
+}
+
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'n',
+                'w $foo',
+                'W $foo',
+                'c',
+                'print "\nIDX=<$idx>\n"',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/test-w-statement-1',
+        }
+    );
+
+    $wrapper->contents_unlike(qr#
+        \$foo\ changed:
+        #msx,
+        'W command - watchpoint was deleted',
+    );
+
+    $wrapper->output_like(qr#
+        \nIDX=<>\n
+        #msx,
+        "W command - stopped at end.",
+    );
+}
+
+# Test the W * command.
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'n',
+                'w $foo',
+                'w ($foo*$foo)',
+                'W *',
+                'c',
+                'print "\nIDX=<$idx>\n"',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/test-w-statement-1',
+        }
+    );
+
+    $wrapper->contents_unlike(qr#
+        \$foo\ changed:
+        #msx,
+        '"W *" command - watchpoint was deleted',
+    );
+
+    $wrapper->output_like(qr#
+        \nIDX=<>\n
+        #msx,
+        '"W *" command - stopped at end.',
+    );
+}
+
+# Test the 'o' command (without further arguments).
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'o',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/test-w-statement-1',
+        }
+    );
+
+    $wrapper->contents_like(qr#
+        ^\s*warnLevel\ =\ '1'\n
+        #msx,
+        q#"o" command (without arguments) displays warnLevel#,
+    );
+
+    $wrapper->contents_like(qr#
+        ^\s*signalLevel\ =\ '1'\n
+        #msx,
+        q#"o" command (without arguments) displays signalLevel#,
+    );
+
+    $wrapper->contents_like(qr#
+        ^\s*dieLevel\ =\ '1'\n
+        #msx,
+        q#"o" command (without arguments) displays dieLevel#,
+    );
+
+    $wrapper->contents_like(qr#
+        ^\s*hashDepth\ =\ 'N/A'\n
+        #msx,
+        q#"o" command (without arguments) displays hashDepth#,
+    );
+}
+
+# Test the 'o' query command.
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'o hashDepth? signalLevel?',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/test-w-statement-1',
+        }
+    );
+
+    $wrapper->contents_unlike(qr#warnLevel#,
+        q#"o" query command does not display warnLevel#,
+    );
+
+    $wrapper->contents_like(qr#
+        ^\s*signalLevel\ =\ '1'\n
+        #msx,
+        q#"o" query command displays signalLevel#,
+    );
+
+    $wrapper->contents_unlike(qr#dieLevel#,
+        q#"o" query command does not display dieLevel#,
+    );
+
+    $wrapper->contents_like(qr#
+        ^\s*hashDepth\ =\ 'N/A'\n
+        #msx,
+        q#"o" query command displays hashDepth#,
+    );
+}
+
+# Test the 'o' set command.
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                'o signalLevel=0',
+                'o',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/test-w-statement-1',
+        }
+    );
+
+    $wrapper->contents_like(qr/
+        ^\s*(signalLevel\ =\ '0'\n)
+        .*?
+        ^\s*\1
+        /msx,
+        q#o set command works#,
+    );
+
+    $wrapper->contents_like(qr#
+        ^\s*hashDepth\ =\ 'N/A'\n
+        #msx,
+        q#o set command - hashDepth#,
+    );
+}
+
+# Test the '<' and "< ?" commands.
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                q/< print "\nX=<$x>\n"/,
+                q/b 7/,
+                q/< ?/,
+                'c',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/disable-breakpoints-1',
+        }
+    );
+
+    $wrapper->contents_like(qr/
+        ^pre-perl\ commands:\n
+        \s*<\ --\ print\ "\\nX=<\$x>\\n"\n
+        /msx,
+        q#Test < and < ? commands - contents.#,
+    );
+
+    $wrapper->output_like(qr#
+        ^X=<FirstVal>\n
+        #msx,
+        q#Test < and < ? commands - output.#,
+    );
+}
+
+# Test the '< *' command.
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                q/< print "\nX=<$x>\n"/,
+                q/b 7/,
+                q/< */,
+                'c',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/disable-breakpoints-1',
+        }
+    );
+
+    $wrapper->output_unlike(qr/FirstVal/,
+        q#Test the '< *' command.#,
+    );
+}
+
+# Test the '>' and "> ?" commands.
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                q/$::foo = 500;/,
+                q/> print "\nFOO=<$::foo>\n"/,
+                q/b 7/,
+                q/> ?/,
+                'c',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/disable-breakpoints-1',
+        }
+    );
+
+    $wrapper->contents_like(qr/
+        ^post-perl\ commands:\n
+        \s*>\ --\ print\ "\\nFOO=<\$::foo>\\n"\n
+        /msx,
+        q#Test > and > ? commands - contents.#,
+    );
+
+    $wrapper->output_like(qr#
+        ^FOO=<500>\n
+        #msx,
+        q#Test > and > ? commands - output.#,
+    );
+}
+
+# Test the '> *' command.
+{
+    my $wrapper = DebugWrap->new(
+        {
+            cmds =>
+            [
+                q/> print "\nFOO=<$::foo>\n"/,
+                q/b 7/,
+                q/> */,
+                'c',
+                'q',
+            ],
+            prog => '../lib/perl5db/t/disable-breakpoints-1',
+        }
+    );
+
+    $wrapper->output_unlike(qr/FOO=/,
+        q#Test the '> *' command.#,
     );
 }
 

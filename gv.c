@@ -1315,6 +1315,16 @@ created if it does not already exist.  If the package does not exist and
 C<flags> is 0 (or any other setting that does not create packages) then NULL
 is returned.
 
+Flags may be one of:
+
+    GV_ADD
+    SVf_UTF8
+    GV_NOADD_NOINIT
+    GV_NOINIT
+    GV_NOEXPAND
+    GV_ADDMG
+
+The most important of which are probably GV_ADD and SVf_UTF8.
 
 =cut
 */
@@ -1645,12 +1655,23 @@ Perl_gv_fetchpvn_flags(pTHX_ const char *nambeg, STRLEN full_len, I32 flags,
 		    require_tie_mod(gv, name, newSVpvs("Tie::Hash::NamedCapture"), "TIEHASH", 0);
 	      }
 	      if (sv_type==SVt_PV || sv_type==SVt_PVGV) {
-	       if (*name == '[')
-		require_tie_mod(gv,name,newSVpvs("arybase"),"FETCH",0);
-	       else if (*name == '&' || *name == '`' || *name == '\'') {
-		PL_sawampersand = TRUE;
-		(void)GvSVn(gv);
-	       }
+                switch (*name) {
+	        case '[':
+		    require_tie_mod(gv,name,newSVpvs("arybase"),"FETCH",0);
+                    break;
+	        case '`':
+		    PL_sawampersand |= SAWAMPERSAND_LEFT;
+                    (void)GvSVn(gv);
+                    break;
+	        case '&':
+		    PL_sawampersand |= SAWAMPERSAND_MIDDLE;
+                    (void)GvSVn(gv);
+                    break;
+	        case '\'':
+		    PL_sawampersand |= SAWAMPERSAND_RIGHT;
+                    (void)GvSVn(gv);
+                    break;
+                }
 	      }
 	    }
 	    else if (len == 3 && sv_type == SVt_PVAV
@@ -1856,7 +1877,13 @@ Perl_gv_fetchpvn_flags(pTHX_ const char *nambeg, STRLEN full_len, I32 flags,
 		sv_type == SVt_PVCV ||
 		sv_type == SVt_PVFM ||
 		sv_type == SVt_PVIO
-		)) { PL_sawampersand = TRUE; }
+		)) { PL_sawampersand |=
+                        (*name == '`')
+                            ? SAWAMPERSAND_LEFT
+                            : (*name == '&')
+                                ? SAWAMPERSAND_MIDDLE
+                                : SAWAMPERSAND_RIGHT;
+                }
 	    goto magicalize;
 
 	case ':':		/* $: */

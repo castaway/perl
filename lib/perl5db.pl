@@ -523,7 +523,7 @@ BEGIN {
 # Debugger for Perl 5.00x; perl5db.pl patch level:
 use vars qw($VERSION $header);
 
-$VERSION = '1.39_02';
+$VERSION = '1.39_03';
 
 $header = "perl5db.pl version $VERSION";
 
@@ -1731,6 +1731,7 @@ use vars qw(
     $stack_depth
     @to_watch
     $try
+    $end
 );
 
 sub DB {
@@ -1741,7 +1742,6 @@ sub DB {
 	my $position;
 	my ($prefix, $after, $infix);
 	my $pat;
-	my $end;
 
 	if ($ENV{PERL5DB_THREADED}) {
 		$tid = eval { "[".threads->tid."]" };
@@ -1755,8 +1755,8 @@ sub DB {
         if ($runnonstop) {    # Disable until signal
                 # If there's any call stack in place, turn off single
                 # stepping into subs throughout the stack.
-            for ( my $i = 0 ; $i <= $stack_depth ; ) {
-                $stack[ $i++ ] &= ~1;
+            for my $i (0 .. $stack_depth) {
+                $stack[ $i ] &= ~1;
             }
 
             # And we are now no longer in single-step mode.
@@ -1804,27 +1804,33 @@ sub DB {
     $max = $#dbline;
 
     # if we have something here, see if we should break.
-    if ( $dbline{$line}
-        && _is_breakpoint_enabled($filename, $line)
-        && ( my ( $stop, $action ) = split( /\0/, $dbline{$line} ) ) )
     {
+        # $stop is lexical and local to this block - $action on the other hand
+        # is global.
+        my $stop;
 
-        # Stop if the stop criterion says to just stop.
-        if ( $stop eq '1' ) {
-            $signal |= 1;
-        }
+        if ( $dbline{$line}
+            && _is_breakpoint_enabled($filename, $line)
+            && (( $stop, $action ) = split( /\0/, $dbline{$line} ) ) )
+        {
 
-        # It's a conditional stop; eval it in the user's context and
-        # see if we should stop. If so, remove the one-time sigil.
-        elsif ($stop) {
-            $evalarg = "\$DB::signal |= 1 if do {$stop}";
-            &eval;
-            # If the breakpoint is temporary, then delete its enabled status.
-            if ($dbline{$line} =~ s/;9($|\0)/$1/) {
-                _cancel_breakpoint_temp_enabled_status($filename, $line);
+            # Stop if the stop criterion says to just stop.
+            if ( $stop eq '1' ) {
+                $signal |= 1;
             }
-        }
-    } ## end if ($dbline{$line} && ...
+
+            # It's a conditional stop; eval it in the user's context and
+            # see if we should stop. If so, remove the one-time sigil.
+            elsif ($stop) {
+                $evalarg = "\$DB::signal |= 1 if do {$stop}";
+                &eval;
+                # If the breakpoint is temporary, then delete its enabled status.
+                if ($dbline{$line} =~ s/;9($|\0)/$1/) {
+                    _cancel_breakpoint_temp_enabled_status($filename, $line);
+                }
+            }
+        } ## end if ($dbline{$line} && ...
+    }
 
     # Preserve the current stop-or-not, and see if any of the W
     # (watch expressions) has changed.
@@ -1832,7 +1838,7 @@ sub DB {
 
     # If we have any watch expressions ...
     if ( $trace & 2 ) {
-        for ( my $n = 0 ; $n <= $#to_watch ; $n++ ) {
+        for my $n (0 .. $#to_watch) {
             $evalarg = $to_watch[$n];
             local $onetimeDump;    # Tell DB::eval() to not output results
 
@@ -1853,7 +1859,7 @@ Watchpoint $n:\t$to_watch[$n] changed:
 EOP
                 $old_watch[$n] = $val;
             } ## end if ($val ne $old_watch...
-        } ## end for (my $n = 0 ; $n <= ...
+        } ## end for my $n (0 ..
     } ## end if ($trace & 2)
 
 =head2 C<watchfunction()>
@@ -2688,8 +2694,8 @@ in this and all call levels above this one.
                     } ## end if ($i)
 
                     # Turn off stack tracing from here up.
-                    for ( $i = 0 ; $i <= $stack_depth ; ) {
-                        $stack[ $i++ ] &= ~1;
+                    for my $i (0 .. $stack_depth) {
+                        $stack[ $i ] &= ~1;
                     }
                     last CMD;
                 };
@@ -2757,7 +2763,8 @@ mess us up.
                 $cmd =~ /^\/(.*)$/ && do {
 
                     # The pattern as a string.
-                    my $inpat = $1;
+                    use vars qw($inpat);
+                    $inpat = $1;
 
                     # Remove the final slash.
                     $inpat =~ s:([^\\])/$:$1:;
@@ -2958,7 +2965,6 @@ If a command is found, it is placed in C<$cmd> and executed via C<redo>.
 
                     # Look backward through the history.
                     for ( $i = $#hist ; $i ; --$i ) {
-
                         # Stop if we find it.
                         last if $hist[$i] =~ /$pat/;
                     }
@@ -3985,6 +3991,8 @@ sub cmd_a {
 
                 # Add the action to the line.
                 $dbline{$lineno} .= "\0" . action($expr);
+
+                _set_breakpoint_enabled_status($filename, $lineno, 1);
             }
         } ## end if (length $expr)
     } ## end if ($line =~ /^\s*(\d*)\s*(\S.+)/)
@@ -4059,7 +4067,7 @@ sub delete_action {
             local *dbline = $main::{ '_<' . $file };
             $max = $#dbline;
             my $was;
-            for ( $i = 1 ; $i <= $max ; $i++ ) {
+            for $i (1 .. $max) {
                 if ( defined $dbline{$i} ) {
                     $dbline{$i} =~ s/\0[^\0]*//;
                     delete $dbline{$i} if $dbline{$i} eq '';
@@ -4067,7 +4075,7 @@ sub delete_action {
                 unless ( $had_breakpoints{$file} &= ~2 ) {
                     delete $had_breakpoints{$file};
                 }
-            } ## end for ($i = 1 ; $i <= $max...
+            } ## end for ($i = 1 .. $max)
         } ## end for my $file (keys %had_breakpoints)
     } ## end else [ if (defined($i))
 } ## end sub delete_action
@@ -4692,7 +4700,7 @@ sub delete_breakpoint {
             my $was;
 
             # For all lines in this file ...
-            for ( $i = 1 ; $i <= $max ; $i++ ) {
+            for $i (1 .. $max) {
 
                 # If there's a breakpoint or action on this line ...
                 if ( defined $dbline{$i} ) {
@@ -4706,7 +4714,7 @@ sub delete_breakpoint {
                         _delete_breakpoint_data_ref($file, $i);
                     }
                 } ## end if (defined $dbline{$i...
-            } ## end for ($i = 1 ; $i <= $max...
+            } ## end for $i (1 .. $max)
 
             # If, after we turn off the "there were breakpoints in this file"
             # bit, the entry in %had_breakpoints for this file is zero,
@@ -5132,7 +5140,7 @@ sub cmd_L {
                         # in this file?
 
             # For each line in the file ...
-            for ( my $i = 1 ; $i <= $max ; $i++ ) {
+            for my $i (1 .. $max) {
 
                 # We've got something on this line.
                 if ( defined $dbline{$i} ) {
@@ -5159,7 +5167,7 @@ sub cmd_L {
                     # Quit if the user hit interrupt.
                     last if $signal;
                 } ## end if (defined $dbline{$i...
-            } ## end for ($i = 1 ; $i <= $max...
+            } ## end for my $i (1 .. $max)
         } ## end for my $file (keys %had_breakpoints)
     } ## end if ($break_wanted or $action_wanted)
 
@@ -5727,7 +5735,7 @@ sub print_trace {
 
     # Run through the traceback info, format it, and print it.
     my $s;
-    for ( my $i = 0 ; $i <= $#sub ; $i++ ) {
+    for my $i (0 .. $#sub) {
 
         # Drop out if the user has lost interest and hit control-C.
         last if $signal;
@@ -5767,7 +5775,7 @@ sub print_trace {
               . " called from $file"
               . " line $sub[$i]{line}\n";
         }
-    } ## end for ($i = 0 ; $i <= $#sub...
+    } ## end for my $i (0 .. $#sub)
 } ## end sub print_trace
 
 =head2 dump_trace(skip[,count])
@@ -5840,7 +5848,7 @@ sub dump_trace {
         $i < $count
         and ( $p, $file, $line, $sub, $h, $context, $e, $r ) = caller($i) ;
         $i++
-      )
+    )
     {
 
         # Go through the arguments and save them for later.
@@ -8310,7 +8318,6 @@ my @pods = qw(
     util
     uts
     var
-    vmesa
     vms
     vos
     win32
@@ -8667,8 +8674,11 @@ Look through all the symbols in the package. C<grep> out all the possible hashes
 
 =cut
 
-        my @out = map "$prefix$_", grep /^\Q$text/, grep /^_?[a-zA-Z]/,
-          keys %$pack;
+        my @out = do {
+            no strict 'refs';
+            map "$prefix$_", grep /^\Q$text/, grep /^_?[a-zA-Z]/,
+            keys %$pack;
+        };
 
 =pod
 
@@ -9377,7 +9387,7 @@ sub cmd_pre580_D {
             my $was;
 
             # For all lines in this file ...
-            for ( my $i = 1 ; $i <= $max ; $i++ ) {
+            for my $i (1 .. $max) {
 
                 # If there's a breakpoint or action on this line ...
                 if ( defined $dbline{$i} ) {
@@ -9390,7 +9400,7 @@ sub cmd_pre580_D {
                         delete $dbline{$i};
                     }
                 } ## end if (defined $dbline{$i...
-            } ## end for ($i = 1 ; $i <= $max...
+            } ## end for my $i (1 .. $max)
 
             # If, after we turn off the "there were breakpoints in this file"
             # bit, the entry in %had_breakpoints for this file is zero,

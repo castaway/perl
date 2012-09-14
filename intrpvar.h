@@ -292,7 +292,7 @@ The C variable which corresponds to Perl's $^W warning variable.
 */
 
 PERLVAR(I, dowarn,	U8)
-PERLVAR(I, sawampersand, bool)		/* must save all match strings */
+PERLVAR(I, sawampersand, U8)		/* must save all match strings */
 PERLVAR(I, unsafe,	bool)
 PERLVAR(I, exit_flags,	U8)		/* was exit() unexpected, etc. */
 
@@ -626,13 +626,13 @@ PERLVAR(I, utf8_print,	SV *)
 PERLVAR(I, utf8_punct,	SV *)
 PERLVAR(I, utf8_xdigit,	SV *)
 PERLVAR(I, utf8_mark,	SV *)
-PERLVAR(I, utf8_X_begin, SV *)
+PERLVAR(I, utf8_X_regular_begin, SV *)
 PERLVAR(I, utf8_X_extend, SV *)
 PERLVAR(I, utf8_X_prepend, SV *)
-PERLVAR(I, utf8_X_non_hangul, SV *)
+PERLVAR(I, utf8_X_special_begin, SV *)
 PERLVAR(I, utf8_X_L,	SV *)
-PERLVAR(I, utf8_X_LV,	SV *)
 PERLVAR(I, utf8_X_LVT,	SV *)
+PERLVAR(I, utf8_X_RI,	SV *)
 PERLVAR(I, utf8_X_T,	SV *)
 PERLVAR(I, utf8_X_V,	SV *)
 PERLVAR(I, utf8_X_LV_LVT_V, SV *)

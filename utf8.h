@@ -22,6 +22,11 @@
 #define FOLD_FLAGS_FULL   0x2
 #define FOLD_FLAGS_NOMIX_ASCII 0x4
 
+/* For _core_swash_init(), internal core use only */
+#define _CORE_SWASH_INIT_USER_DEFINED_PROPERTY 0x1
+#define _CORE_SWASH_INIT_RETURN_IF_UNDEF       0x2
+#define _CORE_SWASH_INIT_ACCEPT_INVLIST        0x4
+
 #define to_uni_fold(c, p, lenp) _to_uni_fold_flags(c, p, lenp, FOLD_FLAGS_FULL)
 #define to_utf8_fold(c, p, lenp) _to_utf8_fold_flags(c, p, lenp, \
 	             FOLD_FLAGS_FULL, NULL)
@@ -103,6 +108,7 @@ END_EXTERN_C
 
 /* As there are no translations, avoid the function wrapper */
 #define utf8n_to_uvchr utf8n_to_uvuni
+#define valid_utf8_to_uvchr valid_utf8_to_uvuni
 #define uvchr_to_utf8  uvuni_to_utf8
 
 /*

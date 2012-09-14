@@ -3,7 +3,7 @@
 # Checks if the parser behaves correctly in edge cases
 # (including weird syntax errors)
 
-print "1..144\n";
+print "1..152\n";
 
 sub failed {
     my ($got, $expected, $name) = @_;
@@ -433,6 +433,16 @@ print "ok ", ++$test, " - unterminated here-docs in s/// in string eval\n";
 sub 'Hello'_he_said (_);
 is prototype "Hello::_he_said", '_', 'initial tick in sub declaration';
 
+{
+    my @x = 'string';
+    is(eval q{ "$x[0]->strung" }, 'string->strung',
+	'literal -> after an array subscript within ""');
+    @x = ['string'];
+    # this used to give "string"
+    like("$x[0]-> [0]", qr/^ARRAY\([^)]*\)-> \[0]\z/,
+	'literal -> [0] after an array subscript within ""');
+}
+
 # Add new tests HERE (above this line)
 
 # bug #74022: Loop on characters in \p{OtherIDContinue}
@@ -517,15 +527,16 @@ eval <<'EOSTANZA'; die $@ if $@;
 check(qr/^Great hail!.*no more\.$/, 61, "Overflow both small buffer checks");
 EOSTANZA
 
-{
-    my @x = 'string';
-    is(eval q{ "$x[0]->strung" }, 'string->strung',
-	'literal -> after an array subscript within ""');
-    @x = ['string'];
-    # this used to give "string"
-    like("$x[0]-> [0]", qr/^ARRAY\([^)]*\)-> \[0]\z/,
-	'literal -> [0] after an array subscript within ""');
-}
+#line 531 parser.t
+<<EOU; check('parser\.t', 531, 'on same line as heredoc');
+EOU
+s//<<EOV/e if 0;
+EOV
+check('parser\.t', 535, 'after here-doc in quotes');
+<<EOW;
+${check('parser\.t', 537, 'first line of interp in here-doc');;
+  check('parser\.t', 538, 'second line of interp in here-doc');}
+EOW
 
 __END__
 # Don't add new tests HERE. See note above

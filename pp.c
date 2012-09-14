@@ -131,6 +131,11 @@ PP(pp_padhv)
     if (gimme == G_ARRAY) {
 	RETURNOP(Perl_do_kv(aTHX));
     }
+    else if ((PL_op->op_private & OPpTRUEBOOL
+	  || (  PL_op->op_private & OPpMAYBE_TRUEBOOL
+	     && block_gimme() == G_VOID  ))
+	  && (!SvRMAGICAL(TARG) || !mg_find(TARG, PERL_MAGIC_tied)))
+	SETs(HvUSEDKEYS(TARG) ? &PL_sv_yes : sv_2mortal(newSViv(0)));
     else if (gimme == G_SCALAR) {
 	SV* const sv = Perl_hv_scalar(aTHX_ MUTABLE_HV(TARG));
 	SETs(sv);
@@ -278,8 +283,7 @@ Perl_softref2xv(pTHX_ SV *const sv, const char *const what,
     }
     if (!SvOK(sv)) {
 	if (
-	  PL_op->op_flags & OPf_REF &&
-	  PL_op->op_next->op_type != OP_BOOLKEYS
+	  PL_op->op_flags & OPf_REF
 	)
 	    Perl_die(aTHX_ PL_no_usym, what);
 	if (ckWARN(WARN_UNINITIALIZED))
@@ -2360,7 +2364,7 @@ PP(pp_i_divide)
     }
 }
 
-#if defined(__GLIBC__) && IVSIZE == 8
+#if defined(__GLIBC__) && IVSIZE == 8 && !defined(PERL_DEBUG_READONLY_OPS)
 STATIC
 PP(pp_i_modulo_0)
 #else
@@ -2383,7 +2387,7 @@ PP(pp_i_modulo)
      }
 }
 
-#if defined(__GLIBC__) && IVSIZE == 8
+#if defined(__GLIBC__) && IVSIZE == 8 && !defined(PERL_DEBUG_READONLY_OPS)
 STATIC
 PP(pp_i_modulo_1)
 
@@ -3016,7 +3020,7 @@ PP(pp_substr)
     }
     tmps = SvPV_const(sv, curlen);
     if (DO_UTF8(sv)) {
-        utf8_curlen = sv_len_utf8(sv);
+        utf8_curlen = sv_len_utf8_nomg(sv);
 	if (utf8_curlen == curlen)
 	    utf8_curlen = 0;
 	else
@@ -5545,13 +5549,9 @@ PP(pp_split)
 	    if (rex_return == 0)
 		break;
 	    TAINT_IF(RX_MATCH_TAINTED(rx));
-	    if (RX_MATCH_COPIED(rx) && RX_SUBBEG(rx) != orig) {
-		m = s;
-		s = orig;
-		orig = RX_SUBBEG(rx);
-		s = orig + (m - s);
-		strend = s + (strend - m);
-	    }
+            /* we never pass the REXEC_COPY_STR flag, so it should
+             * never get copied */
+            assert(!RX_MATCH_COPIED(rx));
 	    m = RX_OFFS(rx)[0].start + orig;
 
 	    if (gimme_scalar) {
@@ -5716,26 +5716,6 @@ PP(unimplemented_op)
     if(OP_IS_SOCKET(op_type))
 	DIE(aTHX_ PL_no_sock_func, name);
     DIE(aTHX_ "panic: unimplemented op %s (#%d) called", name,	op_type);
-}
-
-PP(pp_boolkeys)
-{
-    dVAR;
-    dSP;
-    HV * const hv = (HV*)POPs;
-    
-    if (SvTYPE(hv) != SVt_PVHV) { XPUSHs(&PL_sv_no); RETURN; }
-
-    if (SvRMAGICAL(hv)) {
-	MAGIC * const mg = mg_find((SV*)hv, PERL_MAGIC_tied);
-	if (mg) {
-            XPUSHs(magic_scalarpack(hv, mg));
-	    RETURN;
-        }	    
-    }
-
-    XPUSHs(boolSV(HvUSEDKEYS(hv) != 0));
-    RETURN;
 }
 
 /* For sorting out arguments passed to a &CORE:: subroutine */

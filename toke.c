@@ -306,6 +306,15 @@ static const char* const lex_state_names[] = {
 	    return (int)LSTOP; \
 	} while(0)
 
+#define COPLINE_INC_WITH_HERELINES		    \
+    STMT_START {				     \
+	CopLINE_inc(PL_curcop);			      \
+	if (PL_parser->lex_shared->herelines)	       \
+	    CopLINE(PL_curcop) += PL_parser->lex_shared->herelines, \
+	    PL_parser->lex_shared->herelines = 0;		     \
+    } STMT_END
+
+
 #ifdef DEBUGGING
 
 /* how to interpret the pl_yylval associated with the token */
@@ -424,7 +433,7 @@ S_tokereport(pTHX_ I32 rv, const YYSTYPE* lvalp)
 	}
 	if (name)
 	    Perl_sv_catpv(aTHX_ report, name);
-	else if ((char)rv > ' ' && (char)rv < '~')
+	else if ((char)rv > ' ' && (char)rv <= '~')
 	    Perl_sv_catpvf(aTHX_ report, "'%c'", (char)rv);
 	else if (!rv)
 	    sv_catpvs(report, "EOF");
@@ -741,6 +750,7 @@ Perl_lex_start(pTHX_ SV *line, PerlIO *rsfp, U32 flags)
     Newx(parser->lex_brackstack, 120, char);
     Newx(parser->lex_casestack, 12, char);
     *parser->lex_casestack = '\0';
+    Newxz(parser->lex_shared, 1, LEXSHARED);
 
     if (line) {
 	STRLEN len;
@@ -748,8 +758,7 @@ Perl_lex_start(pTHX_ SV *line, PerlIO *rsfp, U32 flags)
 	parser->linestr = flags & LEX_START_COPIED
 			    ? SvREFCNT_inc_simple_NN(line)
 			    : newSVpvn_flags(s, len, SvUTF8(line));
-	if (!len || s[len-1] != ';')
-	    sv_catpvs(parser->linestr, "\n;");
+	sv_catpvs(parser->linestr, "\n;");
     } else {
 	parser->linestr = newSVpvs("\n;");
     }
@@ -785,6 +794,7 @@ Perl_parser_free(pTHX_  const yy_parser *parser)
 
     Safefree(parser->lex_brackstack);
     Safefree(parser->lex_casestack);
+    Safefree(parser->lex_shared);
     PL_parser = parser->old_parser;
     Safefree(parser);
 }
@@ -920,8 +930,8 @@ Perl_lex_grow_linestr(pTHX_ STRLEN len)
     linestart_pos = PL_parser->linestart - buf;
     last_uni_pos = PL_parser->last_uni ? PL_parser->last_uni - buf : 0;
     last_lop_pos = PL_parser->last_lop ? PL_parser->last_lop - buf : 0;
-    re_eval_start_pos = PL_sublex_info.re_eval_start ?
-                            PL_sublex_info.re_eval_start - buf : 0;
+    re_eval_start_pos = PL_parser->lex_shared->re_eval_start ?
+                            PL_parser->lex_shared->re_eval_start - buf : 0;
 
     buf = sv_grow(linestr, len);
 
@@ -934,8 +944,8 @@ Perl_lex_grow_linestr(pTHX_ STRLEN len)
 	PL_parser->last_uni = buf + last_uni_pos;
     if (PL_parser->last_lop)
 	PL_parser->last_lop = buf + last_lop_pos;
-    if (PL_sublex_info.re_eval_start)
-        PL_sublex_info.re_eval_start  = buf + re_eval_start_pos;
+    if (PL_parser->lex_shared->re_eval_start)
+        PL_parser->lex_shared->re_eval_start  = buf + re_eval_start_pos;
     return buf;
 }
 
@@ -1166,7 +1176,7 @@ Perl_lex_read_to(pTHX_ char *ptr)
 	Perl_croak(aTHX_ "Lexing code internal error (%s)", "lex_read_to");
     for (; s != ptr; s++)
 	if (*s == '\n') {
-	    CopLINE_inc(PL_curcop);
+	    COPLINE_INC_WITH_HERELINES;
 	    PL_parser->linestart = s+1;
 	}
     PL_parser->bufptr = ptr;
@@ -1443,7 +1453,7 @@ Perl_lex_read_unichar(pTHX_ U32 flags)
     c = lex_peek_unichar(flags);
     if (c != -1) {
 	if (c == '\n')
-	    CopLINE_inc(PL_curcop);
+	    COPLINE_INC_WITH_HERELINES;
 	if (UTF)
 	    PL_parser->bufptr += UTF8SKIP(PL_parser->bufptr);
 	else
@@ -1512,7 +1522,7 @@ Perl_lex_read_space(pTHX_ U32 flags)
 	    if (flags & LEX_NO_NEXT_CHUNK)
 		break;
 	    PL_parser->bufptr = s;
-	    CopLINE_inc(PL_curcop);
+	    COPLINE_INC_WITH_HERELINES;
 	    got_more = lex_next_chunk(flags);
 	    CopLINE_dec(PL_curcop);
 	    s = PL_parser->bufptr;
@@ -1555,7 +1565,7 @@ S_incline(pTHX_ const char *s)
 
     PERL_ARGS_ASSERT_INCLINE;
 
-    CopLINE_inc(PL_curcop);
+    COPLINE_INC_WITH_HERELINES;
     if (*s++ != '#')
 	return;
     while (SPACE_OR_TAB(*s))
@@ -2448,6 +2458,7 @@ STATIC I32
 S_sublex_push(pTHX)
 {
     dVAR;
+    LEXSHARED *shared;
     ENTER;
 
     PL_lex_state = PL_sublex_info.super_state;
@@ -2460,9 +2471,6 @@ S_sublex_push(pTHX)
     SAVEI32(PL_lex_starts);
     SAVEI8(PL_lex_state);
     SAVESPTR(PL_lex_repl);
-    SAVEPPTR(PL_sublex_info.re_eval_start);
-    SAVESPTR(PL_sublex_info.re_eval_str);
-    SAVEPPTR(PL_sublex_info.super_bufptr);
     SAVEVPTR(PL_lex_inpat);
     SAVEI16(PL_lex_inwhat);
     SAVECOPLINE(PL_curcop);
@@ -2476,39 +2484,26 @@ S_sublex_push(pTHX)
     SAVESPTR(PL_linestr);
     SAVEGENERICPV(PL_lex_brackstack);
     SAVEGENERICPV(PL_lex_casestack);
+    SAVEGENERICPV(PL_parser->lex_shared);
 
     /* The here-doc parser needs to be able to peek into outer lexing
-       scopes to find the body of the here-doc.  We use SvIVX(PL_linestr)
-       to store the outer PL_bufptr and SvNVX to store the outer
-       PL_linestr.  Since SvIVX already means something else, we use
-       PL_sublex_info.super_bufptr for the innermost scope (the one we are
-       now entering), and a localised SvIVX for outer scopes.
+       scopes to find the body of the here-doc.  So we put PL_linestr and
+       PL_bufptr into lex_shared, to ‘share’ those values.
      */
-    SvUPGRADE(PL_linestr, SVt_PVIV);
-    /* A null super_bufptr means the outer lexing scope is not peekable,
-       because it is a single line from an input stream. */
-    SAVEIV(SvIVX(PL_linestr));
-    SvIVX(PL_linestr) = PTR2IV(PL_sublex_info.super_bufptr);
-    PL_sublex_info.super_bufptr =
-	(SvTYPE(PL_linestr) < SVt_PVNV || !SvNVX(PL_linestr))
-	 && (PL_rsfp || PL_parser->filtered)
-	 ? NULL
-	 : PL_bufptr;
-    SvUPGRADE(PL_lex_stuff, SVt_PVNV);
-    SvNVX(PL_lex_stuff) = PTR2NV(PL_linestr);
+    PL_parser->lex_shared->ls_linestr = PL_linestr;
+    PL_parser->lex_shared->ls_bufptr  = PL_bufptr;
 
     PL_linestr = PL_lex_stuff;
     PL_lex_repl = PL_sublex_info.repl;
     PL_lex_stuff = NULL;
     PL_sublex_info.repl = NULL;
-    PL_sublex_info.re_eval_start = NULL;
-    PL_sublex_info.re_eval_str = NULL;
 
     PL_bufend = PL_bufptr = PL_oldbufptr = PL_oldoldbufptr = PL_linestart
 	= SvPVX(PL_linestr);
     PL_bufend += SvCUR(PL_linestr);
     PL_last_lop = PL_last_uni = NULL;
     SAVEFREESV(PL_linestr);
+    if (PL_lex_repl) SAVEFREESV(PL_lex_repl);
 
     PL_lex_dojoin = FALSE;
     PL_lex_brackets = PL_lex_formbrack = 0;
@@ -2521,6 +2516,10 @@ S_sublex_push(pTHX)
     PL_lex_starts = 0;
     PL_lex_state = LEX_INTERPCONCAT;
     CopLINE_set(PL_curcop, (line_t)PL_multi_start);
+    
+    Newxz(shared, 1, LEXSHARED);
+    shared->ls_prev = PL_parser->lex_shared;
+    PL_parser->lex_shared = shared;
 
     PL_lex_inwhat = PL_sublex_info.sub_inwhat;
     if (PL_lex_inwhat == OP_TRANSR) PL_lex_inwhat = OP_TRANS;
@@ -2558,14 +2557,11 @@ S_sublex_done(pTHX)
     /* Is there a right-hand side to take care of? (s//RHS/ or tr//RHS/) */
     assert(PL_lex_inwhat != OP_TRANSR);
     if (PL_lex_repl && (PL_lex_inwhat == OP_SUBST || PL_lex_inwhat == OP_TRANS)) {
-	SvUPGRADE(PL_lex_repl, SVt_PVNV);
-	SvNVX(PL_lex_repl) = SvNVX(PL_linestr);
 	PL_linestr = PL_lex_repl;
 	PL_lex_inpat = 0;
 	PL_bufend = PL_bufptr = PL_oldbufptr = PL_oldoldbufptr = PL_linestart = SvPVX(PL_linestr);
 	PL_bufend += SvCUR(PL_linestr);
 	PL_last_lop = PL_last_uni = NULL;
-	SAVEFREESV(PL_linestr);
 	PL_lex_dojoin = FALSE;
 	PL_lex_brackets = 0;
 	PL_lex_allbrackets = 0;
@@ -2817,6 +2813,7 @@ S_scan_const(pTHX_ char *start)
 #endif
 
                 if (min > max) {
+		    SvREFCNT_dec(sv);
 		    Perl_croak(aTHX_
 			       "Invalid range \"%c-%c\" in transliteration operator",
 			       (char)min, (char)max);
@@ -2875,6 +2872,7 @@ S_scan_const(pTHX_ char *start)
 	    /* range begins (ignore - as first or last char) */
 	    else if (*s == '-' && s+1 < send  && s != start) {
 		if (didrange) {
+		    SvREFCNT_dec(sv);
 		    Perl_croak(aTHX_ "Ambiguous range in transliteration operator");
 		}
 		if (has_utf8
@@ -4681,7 +4679,7 @@ Perl_yylex(pTHX)
 	}
 	/* Convert (?{...}) and friends to 'do {...}' */
 	if (PL_lex_inpat && *PL_bufptr == '(') {
-	    PL_sublex_info.re_eval_start = PL_bufptr;
+	    PL_parser->lex_shared->re_eval_start = PL_bufptr;
 	    PL_bufptr += 2;
 	    if (*PL_bufptr != '{')
 		PL_bufptr++;
@@ -4740,28 +4738,30 @@ Perl_yylex(pTHX)
 	   re_eval_str.  If the here-doc body’s length equals the previous
 	   value of re_eval_start, re_eval_start will now be null.  So
 	   check re_eval_str as well. */
-	if (PL_sublex_info.re_eval_start || PL_sublex_info.re_eval_str) {
+	if (PL_parser->lex_shared->re_eval_start
+	 || PL_parser->lex_shared->re_eval_str) {
 	    SV *sv;
 	    if (*PL_bufptr != ')')
 		Perl_croak(aTHX_ "Sequence (?{...}) not terminated with ')'");
 	    PL_bufptr++;
 	    /* having compiled a (?{..}) expression, return the original
 	     * text too, as a const */
-	    if (PL_sublex_info.re_eval_str) {
-		sv = PL_sublex_info.re_eval_str;
-		PL_sublex_info.re_eval_str = NULL;
-		SvCUR_set(sv, PL_bufptr - PL_sublex_info.re_eval_start);
+	    if (PL_parser->lex_shared->re_eval_str) {
+		sv = PL_parser->lex_shared->re_eval_str;
+		PL_parser->lex_shared->re_eval_str = NULL;
+		SvCUR_set(sv,
+			 PL_bufptr - PL_parser->lex_shared->re_eval_start);
 		SvPV_shrink_to_cur(sv);
 	    }
-	    else sv = newSVpvn(PL_sublex_info.re_eval_start,
-			       PL_bufptr - PL_sublex_info.re_eval_start);
+	    else sv = newSVpvn(PL_parser->lex_shared->re_eval_start,
+			 PL_bufptr - PL_parser->lex_shared->re_eval_start);
 	    start_force(PL_curforce);
 	    /* XXX probably need a CURMAD(something) here */
 	    NEXTVAL_NEXTTOKE.opval =
 		    (OP*)newSVOP(OP_CONST, 0,
 				 sv);
 	    force_next(THING);
-	    PL_sublex_info.re_eval_start = NULL;
+	    PL_parser->lex_shared->re_eval_start = NULL;
 	    PL_expect = XTERM;
 	    return REPORT(',');
 	}
@@ -4976,7 +4976,7 @@ Perl_yylex(pTHX)
 		fake_eof = LEX_FAKE_EOF;
 	    }
 	    PL_bufptr = PL_bufend;
-	    CopLINE_inc(PL_curcop);
+	    COPLINE_INC_WITH_HERELINES;
 	    if (!lex_next_chunk(fake_eof)) {
 		CopLINE_dec(PL_curcop);
 		s = PL_bufptr;
@@ -5263,6 +5263,7 @@ Perl_yylex(pTHX)
 		    incline(s);
 	    }
 	    else {
+		const bool in_comment = *s == '#';
 		d = s;
 		while (d < PL_bufend && *d != '\n')
 		    d++;
@@ -5276,7 +5277,11 @@ Perl_yylex(pTHX)
 		    PL_thiswhite = newSVpvn(s, d - s);
 #endif
 		s = d;
-		incline(s);
+		if (in_comment && d == PL_bufend
+		 && PL_lex_state == LEX_INTERPNORMAL
+		 && PL_lex_inwhat == OP_SUBST && PL_lex_repl == PL_linestr
+		 && SvEVALED(PL_lex_repl) && d[-1] == '}') s--;
+		else incline(s);
 	    }
 	    if (PL_lex_formbrack && PL_lex_brackets <= PL_lex_formbrack) {
 		PL_lex_state = LEX_FORMLINE;
@@ -5748,10 +5753,7 @@ Perl_yylex(pTHX)
 	}
 	switch (PL_expect) {
 	case XTERM:
-	    if (PL_oldoldbufptr == PL_last_lop)
-		PL_lex_brackstack[PL_lex_brackets++] = XTERM;
-	    else
-		PL_lex_brackstack[PL_lex_brackets++] = XOPERATOR;
+	    PL_lex_brackstack[PL_lex_brackets++] = XOPERATOR;
 	    PL_lex_allbrackets++;
 	    OPERATOR(HASHBRACK);
 	case XOPERATOR:
@@ -5927,7 +5929,10 @@ Perl_yylex(pTHX)
 #endif
 		    return yylex();	/* ignore fake brackets */
 		}
-		if (*s == '-' && s[1] == '>')
+		if (PL_lex_inwhat == OP_SUBST && PL_lex_repl == PL_linestr
+		 && SvEVALED(PL_lex_repl))
+		    PL_lex_state = LEX_INTERPEND;
+		else if (*s == '-' && s[1] == '>')
 		    PL_lex_state = LEX_INTERPENDMAYBE;
 		else if (*s != '[' && *s != '{')
 		    PL_lex_state = LEX_INTERPEND;
@@ -6136,7 +6141,8 @@ Perl_yylex(pTHX)
 		s = scan_heredoc(s);
 	    else
 		s = scan_inputsymbol(s);
-	    TERM(sublex_start());
+	    PL_expect = XOPERATOR;
+	    TOKEN(sublex_start());
 	}
 	s++;
 	{
@@ -8432,6 +8438,7 @@ Perl_yylex(pTHX)
 	    LOP(OP_SYSWRITE,XTERM);
 
 	case KEY_tr:
+	case KEY_y:
 	    s = scan_trans(s);
 	    TERM(sublex_start());
 
@@ -8559,10 +8566,6 @@ Perl_yylex(pTHX)
 		return REPORT(0);
 	    pl_yylval.ival = OP_XOR;
 	    OPERATOR(OROP);
-
-	case KEY_y:
-	    s = scan_trans(s);
-	    TERM(sublex_start());
 	}
     }}
 }
@@ -9363,8 +9366,6 @@ S_scan_subst(pTHX_ char *start)
 	}
 	sv_catpvs(repl, "{");
 	sv_catsv(repl, PL_sublex_info.repl);
-	if (strchr(SvPVX(PL_sublex_info.repl), '#'))
-	    sv_catpvs(repl, "\n");
 	sv_catpvs(repl, "}");
 	SvEVALED_on(repl);
 	SvREFCNT_dec(PL_sublex_info.repl);
@@ -9480,40 +9481,33 @@ S_scan_trans(pTHX_ char *start)
    a whole string being evalled, or the contents of the current quote-
    like operator.
 
-   The three methods are:
-    - Steal lines from the input stream (stream)
-    - Scan the heredoc in PL_linestr and remove it therefrom (linestr)
-    - Peek at the PL_linestr of outer lexing scopes (peek)
+   The two basic methods are:
+    - Steal lines from the input stream
+    - Scan the heredoc in PL_linestr and remove it therefrom
 
-   They are used in these cases:
-     file scope or filtered eval			stream
-     string eval					linestr
-     multiline quoted construct				linestr
-     single-line quoted construct in file		stream
-     single-line quoted construct in eval or quote	peek
+   In a file scope or filtered eval, the first method is used; in a
+   string eval, the second.
 
-   Single-line also applies to heredocs that begin on the last line of a
-   quote-like operator.
-
-   Peeking within a quote also involves falling back to the stream method,
-   if the outer quote-like operators are all on one line (or the heredoc
-   marker is on the last line).
+   In a quote-like operator, we have to choose between the two,
+   depending on where we can find a newline.  We peek into outer lex-
+   ing scopes until we find one with a newline in it.  If we reach the
+   outermost lexing scope and it is a file, we use the stream method.
+   Otherwise it is treated as an eval.
 */
 
 STATIC char *
 S_scan_heredoc(pTHX_ register char *s)
 {
     dVAR;
-    SV *herewas;
     I32 op_type = OP_SCALAR;
     I32 len;
     SV *tmpstr;
     char term;
-    const char *found_newline = 0;
     char *d;
     char *e;
     char *peek;
     const bool infile = PL_rsfp || PL_parser->filtered;
+    LEXSHARED *shared = PL_parser->lex_shared;
 #ifdef PERL_MAD
     I32 stuffstart = s - SvPVX(PL_linestr);
     char *tstart;
@@ -9591,18 +9585,6 @@ S_scan_heredoc(pTHX_ register char *s)
 	s = olds;
     }
 #endif
-    if ((infile && !PL_lex_inwhat)
-     || !(found_newline = (char*)memchr((void*)s, '\n', PL_bufend - s))) {
-        herewas = newSVpvn(s,PL_bufend-s);
-    }
-    else {
-#ifdef PERL_MAD
-        herewas = newSVpvn(s-1,found_newline-s+1);
-#else
-        s--;
-        herewas = newSVpvn(s,found_newline-s);
-#endif
-    }
 #ifdef PERL_MAD
     if (PL_madskills) {
 	tstart = SvPVX(PL_linestr) + stuffstart;
@@ -9611,14 +9593,8 @@ S_scan_heredoc(pTHX_ register char *s)
 	else
 	    PL_thisstuff = newSVpvn(tstart, s - tstart);
     }
-#endif
-    s += SvCUR(herewas);
 
-#ifdef PERL_MAD
     stuffstart = s - SvPVX(PL_linestr);
-
-    if (found_newline)
-	s--;
 #endif
 
     tmpstr = newSV_type(SVt_PVIV);
@@ -9632,72 +9608,57 @@ S_scan_heredoc(pTHX_ register char *s)
 	SvIV_set(tmpstr, '\\');
     }
 
-    CLINE;
-    PL_multi_start = CopLINE(PL_curcop);
+    PL_multi_start = CopLINE(PL_curcop) + 1;
     PL_multi_open = PL_multi_close = '<';
-    if (PL_lex_inwhat && !found_newline) {
-	/* Peek into the line buffer of the parent lexing scope, going up
- 	   as many levels as necessary to find one with a newline after
-	   bufptr.  See the comments in sublex_push for how IVX and NVX
-	   are abused.
-	 */
-	SV *linestr = NUM2PTR(SV *, SvNVX(PL_linestr));
-	char *bufptr = PL_sublex_info.super_bufptr;
-	char *bufend = SvEND(linestr);
-	char * const olds = s - SvCUR(herewas);
-	char * const real_olds = s;
-	if (!bufptr) {
-	    s = real_olds;
-	    goto streaming;
-	}
-	while (!(s = (char *)memchr((void *)bufptr, '\n', bufend-bufptr))){
-	    if (SvIVX(linestr)) {
-		bufptr = INT2PTR(char *, SvIVX(linestr));
-		linestr = NUM2PTR(SV *, SvNVX(linestr));
-		bufend = SvEND(linestr);
-	    }
-	    else if (infile) {
-		s = real_olds;
+    /* inside a string eval or quote-like operator */
+    if (!infile || PL_lex_inwhat) {
+	SV *linestr;
+	char *bufend;
+	char * const olds = s;
+	PERL_CONTEXT * const cx = &cxstack[cxstack_ix];
+	/* These two fields are not set until an inner lexing scope is
+	   entered.  But we need them set here. */
+	shared->ls_bufptr  = s;
+	shared->ls_linestr = PL_linestr;
+	if (PL_lex_inwhat)
+	  /* Look for a newline.  If the current buffer does not have one,
+	     peek into the line buffer of the parent lexing scope, going
+ 	     up as many levels as necessary to find one with a newline
+	     after bufptr.
+	   */
+	  while (!(s = (char *)memchr(
+		    (void *)shared->ls_bufptr, '\n',
+		    SvEND(shared->ls_linestr)-shared->ls_bufptr
+		))) {
+	    shared = shared->ls_prev;
+	    /* shared is only null if we have gone beyond the outermost
+	       lexing scope.  In a file, we will have broken out of the
+	       loop in the previous iteration.  In an eval, the string buf-
+	       fer ends with "\n;", so the while condition below will have
+	       evaluated to false.  So shared can never be null. */
+	    assert(shared);
+	    /* A LEXSHARED struct with a null ls_prev pointer is the outer-
+	       most lexing scope.  In a file, shared->ls_linestr at that
+	       level is just one line, so there is no body to steal. */
+	    if (infile && !shared->ls_prev) {
+		s = olds;
 		goto streaming;
 	    }
-	    else {
-		s = bufend;
-		break;
-	    }
+	  }
+	else {	/* eval */
+	    s = (char*)memchr((void*)s, '\n', PL_bufend - s);
+	    assert(s);
 	}
+	linestr = shared->ls_linestr;
+	bufend = SvEND(linestr);
 	d = s;
 	while (s < bufend &&
 	  (*s != '\n' || memNE(s,PL_tokenbuf,len)) ) {
 	    if (*s++ == '\n')
-		CopLINE_inc(PL_curcop);
+		++shared->herelines;
 	}
 	if (s >= bufend) {
-	    CopLINE_set(PL_curcop, (line_t)PL_multi_start);
-	    missingterm(PL_tokenbuf + 1);
-	}
-	sv_setpvn(herewas,bufptr,d-bufptr+1);
-	sv_setpvn(tmpstr,d+1,s-d);
-	s += len - 1;
-	sv_catpvn(herewas,s,bufend-s);
-	Copy(SvPVX_const(herewas),bufptr,SvCUR(herewas) + 1,char);
-	SvCUR_set(linestr,
-		  bufptr-SvPVX_const(linestr)
-		   + SvCUR(herewas));
-
-	s = olds;
-	goto retval;
-    }
-    else if (!infile || found_newline) {
-	char * const olds = s - SvCUR(herewas);
-	d = s;
-	while (s < PL_bufend &&
-	  (*s != '\n' || memNE(s,PL_tokenbuf,len)) ) {
-	    if (*s++ == '\n')
-		CopLINE_inc(PL_curcop);
-	}
-	if (s >= PL_bufend) {
-	    CopLINE_set(PL_curcop, (line_t)PL_multi_start);
-	    missingterm(PL_tokenbuf + 1);
+	    goto interminable;
 	}
 	sv_setpvn(tmpstr,d+1,s-d);
 #ifdef PERL_MAD
@@ -9710,33 +9671,52 @@ S_scan_heredoc(pTHX_ register char *s)
 	}
 #endif
 	s += len - 1;
-	CopLINE_inc(PL_curcop);	/* the preceding stmt passes a newline */
+	/* the preceding stmt passes a newline */
+	shared->herelines++;
 
 	/* s now points to the newline after the heredoc terminator.
 	   d points to the newline before the body of the heredoc.
 	 */
+
+	/* We are going to modify linestr in place here, so set
+	   aside copies of the string if necessary for re-evals or
+	   (caller $n)[6]. */
 	/* See the Paranoia note in case LEX_INTERPEND in yylex, for why we
-	   check PL_sublex_info.re_eval_str. */
-	if (PL_sublex_info.re_eval_start || PL_sublex_info.re_eval_str) {
+	   check shared->re_eval_str. */
+	if (shared->re_eval_start || shared->re_eval_str) {
 	    /* Set aside the rest of the regexp */
-	    if (!PL_sublex_info.re_eval_str)
-		PL_sublex_info.re_eval_str =
-		       newSVpvn(PL_sublex_info.re_eval_start,
-				PL_bufend - PL_sublex_info.re_eval_start);
-	    PL_sublex_info.re_eval_start -= s-d;
+	    if (!shared->re_eval_str)
+		shared->re_eval_str =
+		       newSVpvn(shared->re_eval_start,
+				bufend - shared->re_eval_start);
+	    shared->re_eval_start -= s-d;
+	}
+	if (CxTYPE(cx) == CXt_EVAL && CxOLD_OP_TYPE(cx) == OP_ENTEREVAL
+	 && cx->blk_eval.cur_text == linestr) {
+	    cx->blk_eval.cur_text = newSVsv(linestr);
+	    SvSCREAM_on(cx->blk_eval.cur_text);
 	}
 	/* Copy everything from s onwards back to d. */
-	Move(s,d,PL_bufend-s + 1,char);
-	SvCUR_set(PL_linestr, SvCUR(PL_linestr) - (s-d));
-	PL_bufend = SvPVX(PL_linestr) + SvCUR(PL_linestr);
+	Move(s,d,bufend-s + 1,char);
+	SvCUR_set(linestr, SvCUR(linestr) - (s-d));
+	/* Setting PL_bufend only applies when we have not dug deeper
+	   into other scopes, because sublex_done sets PL_bufend to
+	   SvEND(PL_linestr). */
+	if (shared == PL_parser->lex_shared) PL_bufend = SvEND(linestr);
 	s = olds;
     }
     else
-	sv_setpvs(tmpstr,"");   /* avoid "uninitialized" warning */
-  streaming:
-    term = PL_tokenbuf[1];
-    len--;
-    while (s >= PL_bufend) {	/* multiple line string? */
+    {
+      SV *linestr_save;
+     streaming:
+      sv_setpvs(tmpstr,"");   /* avoid "uninitialized" warning */
+      term = PL_tokenbuf[1];
+      len--;
+      linestr_save = PL_linestr; /* must restore this afterwards */
+      d = s;			 /* and this */
+      PL_linestr = newSVpvs("");
+      PL_bufend = SvPVX(PL_linestr);
+      while (1) {
 #ifdef PERL_MAD
 	if (PL_madskills) {
 	    tstart = SvPVX(PL_linestr) + stuffstart;
@@ -9746,14 +9726,15 @@ S_scan_heredoc(pTHX_ register char *s)
 		PL_thisstuff = newSVpvn(tstart, PL_bufend - tstart);
 	}
 #endif
-	PL_bufptr = s;
-	CopLINE_inc(PL_curcop);
+	PL_bufptr = PL_bufend;
+	CopLINE_set(PL_curcop,
+		    PL_multi_start + shared->herelines);
 	if (!lex_next_chunk(LEX_NO_TERM)
 	 && (!SvCUR(tmpstr) || SvEND(tmpstr)[-1] != '\n')) {
-	    CopLINE_set(PL_curcop, (line_t)PL_multi_start);
-	    missingterm(PL_tokenbuf + 1);
+	    SvREFCNT_dec(linestr_save);
+	    goto interminable;
 	}
-	CopLINE_dec(PL_curcop);
+	CopLINE_set(PL_curcop, (line_t)PL_multi_start - 1);
 	if (!SvCUR(PL_linestr) || PL_bufend[-1] != '\n') {
 	    lex_grow_linestr(SvCUR(PL_linestr) + 2);
 	    sv_catpvs(PL_linestr, "\n\0");
@@ -9762,8 +9743,7 @@ S_scan_heredoc(pTHX_ register char *s)
 #ifdef PERL_MAD
 	stuffstart = s - SvPVX(PL_linestr);
 #endif
-	CopLINE_inc(PL_curcop);
-	PL_bufend = SvPVX(PL_linestr) + SvCUR(PL_linestr);
+	shared->herelines++;
 	PL_last_lop = PL_last_uni = NULL;
 #ifndef PERL_STRICT_CR
 	if (PL_bufend - PL_linestart >= 2) {
@@ -9781,25 +9761,22 @@ S_scan_heredoc(pTHX_ register char *s)
 	    PL_bufend[-1] = '\n';
 #endif
 	if (*s == term && memEQ(s,PL_tokenbuf + 1,len)) {
-	    STRLEN off = PL_bufend - 1 - SvPVX_const(PL_linestr);
-	    *(SvPVX(PL_linestr) + off ) = ' ';
-	    lex_grow_linestr(SvCUR(PL_linestr) + SvCUR(herewas) + 1);
-	    sv_catsv(PL_linestr,herewas);
+	    SvREFCNT_dec(PL_linestr);
+	    PL_linestr = linestr_save;
+	    PL_linestart = SvPVX(linestr_save);
 	    PL_bufend = SvPVX(PL_linestr) + SvCUR(PL_linestr);
-	    s = SvPVX(PL_linestr) + off; /* In case PV of PL_linestr moved. */
+	    s = d;
+	    break;
 	}
 	else {
-	    s = PL_bufend;
 	    sv_catsv(tmpstr,PL_linestr);
 	}
+      }
     }
-    s++;
-retval:
     PL_multi_end = CopLINE(PL_curcop);
     if (SvCUR(tmpstr) + 5 < SvLEN(tmpstr)) {
 	SvPV_shrink_to_cur(tmpstr);
     }
-    SvREFCNT_dec(herewas);
     if (!IN_BYTES) {
 	if (UTF && is_utf8_string((U8*)SvPVX_const(tmpstr), SvCUR(tmpstr)))
 	    SvUTF8_on(tmpstr);
@@ -9809,6 +9786,11 @@ retval:
     PL_lex_stuff = tmpstr;
     pl_yylval.ival = op_type;
     return s;
+
+  interminable:
+    SvREFCNT_dec(tmpstr);
+    CopLINE_set(PL_curcop, (line_t)PL_multi_start - 1);
+    missingterm(PL_tokenbuf + 1);
 }
 
 /* scan_inputsymbol
@@ -10109,7 +10091,7 @@ S_scan_str(pTHX_ char *start, int keep_quoted, int keep_delims, int re_reparse)
 
 		for (; s < ns; s++) {
 		    if (*s == '\n' && !PL_rsfp && !PL_parser->filtered)
-			CopLINE_inc(PL_curcop);
+			COPLINE_INC_WITH_HERELINES;
 		}
 		if (!found)
 		    goto read_more_line;
@@ -10176,7 +10158,7 @@ S_scan_str(pTHX_ char *start, int keep_quoted, int keep_delims, int re_reparse)
 	    for (; s < PL_bufend; s++,to++) {
 	    	/* embedded newlines increment the current line number */
 		if (*s == '\n' && !PL_rsfp && !PL_parser->filtered)
-		    CopLINE_inc(PL_curcop);
+		    COPLINE_INC_WITH_HERELINES;
 		/* handle quoted delimiters */
 		if (*s == '\\' && s+1 < PL_bufend && term != '\\') {
 		    if (!keep_quoted
@@ -10211,7 +10193,7 @@ S_scan_str(pTHX_ char *start, int keep_quoted, int keep_delims, int re_reparse)
 	    for (; s < PL_bufend; s++,to++) {
 	    	/* embedded newlines increment the line count */
 		if (*s == '\n' && !PL_rsfp && !PL_parser->filtered)
-		    CopLINE_inc(PL_curcop);
+		    COPLINE_INC_WITH_HERELINES;
 		/* backslashes can escape the open or closing characters */
 		if (*s == '\\' && s+1 < PL_bufend) {
 		    if (!keep_quoted &&
@@ -10270,7 +10252,7 @@ S_scan_str(pTHX_ char *start, int keep_quoted, int keep_delims, int re_reparse)
 		PL_thisstuff = newSVpvn(tstart, PL_bufend - tstart);
 	}
 #endif
-	CopLINE_inc(PL_curcop);
+	COPLINE_INC_WITH_HERELINES;
 	PL_bufptr = PL_bufend;
 	if (!lex_next_chunk(0)) {
 	    sv_free(sv);
@@ -10809,7 +10791,7 @@ S_scan_formline(pTHX_ register char *s)
 	    }
 #endif
 	    PL_bufptr = PL_bufend;
-	    CopLINE_inc(PL_curcop);
+	    COPLINE_INC_WITH_HERELINES;
 	    got_some = lex_next_chunk(0);
 	    CopLINE_dec(PL_curcop);
 	    s = PL_bufptr;

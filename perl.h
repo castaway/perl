@@ -2555,11 +2555,6 @@ typedef SV PADNAME;
 #  include "iperlsys.h"
 #endif
 
-#if defined(__OPEN_VM)
-#   include "vmesa/vmesaish.h"
-#   define ISHISH "vmesa"
-#endif
-
 #ifdef DOSISH
 #   if defined(OS2)
 #       include "os2ish.h"
@@ -3456,9 +3451,6 @@ struct _sublex_info {
     U8 super_state;	/* lexer state to save */
     U16 sub_inwhat;	/* "lex_inwhat" to use */
     OP *sub_op;		/* "lex_op" to use */
-    char *super_bufptr;	/* PL_parser->bufptr that was */
-    char *re_eval_start;/* start of "(?{..." text */
-    SV *re_eval_str;	/* "(?{...})" text */
     SV *repl;		/* replacement of s/// or y/// */
 };
 
@@ -3907,7 +3899,7 @@ double atof (const char*);
 /* All of these are in stdlib.h or time.h for ANSI C */
 Time_t time();
 struct tm *gmtime(), *localtime();
-#if defined(OEMVS) || defined(__OPEN_VM)
+#if defined(OEMVS)
 char *(strchr)(), *(strrchr)();
 char *(strcpy)(), *(strcat)();
 #else
@@ -4861,6 +4853,12 @@ typedef enum {
 #define HINT_SORT_QUICKSORT	0x00000001
 #define HINT_SORT_MERGESORT	0x00000002
 #define HINT_SORT_STABLE	0x00000100 /* sort styles (currently one) */
+
+/* flags for PL_sawampersand */
+
+#define SAWAMPERSAND_LEFT       1   /* saw $` */
+#define SAWAMPERSAND_MIDDLE     2   /* saw $& */
+#define SAWAMPERSAND_RIGHT      4   /* saw $' */
 
 /* Various states of the input record separator SV (rs) */
 #define RsSNARF(sv)   (! SvOK(sv))

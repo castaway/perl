@@ -916,13 +916,10 @@
 /* MEM_ALIGNBYTES:
  *	This symbol contains the number of bytes required to align a
  *	double, or a long double when applicable. Usual values are 2,
- *	4 and 8. The default is eight, for safety.
+ *	4 and 8. The default is eight, for safety.  For cross-compiling
+ *  	or multiarch support, Configure will set a minimum of 8.
  */
-#if defined(USE_CROSS_COMPILE) || defined(MULTIARCH)
-#  define MEM_ALIGNBYTES 8
-#else
 #define MEM_ALIGNBYTES 4
-#endif
 
 /* ARCHLIB:
  *	This variable, if defined, holds the name of the directory in
@@ -2363,9 +2360,17 @@
  *	This symbol, if defined, indicates the availability of
  *	struct ip_mreq;
  */
+/* HAS_IP_MREQ_SOURCE:
+ *	This symbol, if defined, indicates the availability of
+ *	struct ip_mreq_source;
+ */
 /* HAS_IPV6_MREQ:
  *	This symbol, if defined, indicates the availability of
  *	struct ipv6_mreq;
+ */
+/* HAS_IPV6_MREQ_SOURCE:
+ *	This symbol, if defined, indicates the availability of
+ *	struct ipv6_mreq_source;
  */
 /*#define	HAS_SOCKET		/ **/
 /*#define	HAS_SOCKETPAIR	/ **/
@@ -2379,7 +2384,9 @@
 /*#define	HAS_SOCKADDR_IN6	/ **/
 /*#define	HAS_SIN6_SCOPE_ID	/ **/
 /*#define	HAS_IP_MREQ	/ **/
+/*#define	HAS_IP_MREQ_SOURCE	/ **/
 /*#define	HAS_IPV6_MREQ	/ **/
+/*#define	HAS_IPV6_MREQ_SOURCE	/ **/
 
 /* HAS_SRAND48_R:
  *	This symbol, if defined, indicates that the srand48_r routine
@@ -4739,6 +4746,6 @@
 #endif
 
 /* Generated from:
- * 450f87b8e0de509bd7e72485185b4060363119bedef2b8aff868354f42708a78 config_h.SH
- * 136e00f109103fdebadeec53d77fbc8f8c1bf3eb82ce970c966f362584f4b7f2 uconfig.sh
+ * b715233966bd9d5369e407526f95e2d6a28d5e6d8a9501ea859304bbe4fd4524 config_h.SH
+ * 0b6320512dbf7572c05acf6d6add343230d232f287d02f6d32a7a32edadd97b9 uconfig.sh
  * ex: set ro: */

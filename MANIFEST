@@ -3190,6 +3190,7 @@ dist/ExtUtils-ParseXS/t/111-analyze_preprocessor_statements.t	ExtUtils::ParseXS 
 dist/ExtUtils-ParseXS/t/112-set_cond.t				ExtUtils::ParseXS tests
 dist/ExtUtils-ParseXS/t/113-check_cond_preproc_statements.t	ExtUtils::ParseXS tests
 dist/ExtUtils-ParseXS/t/114-blurt_death_Warn.t			ExtUtils::ParseXS tests
+dist/ExtUtils-ParseXS/t/115-avoid-noise.t			ExtUtils::ParseXS tests
 dist/ExtUtils-ParseXS/t/501-t-compile.t				ExtUtils::Typemaps tests
 dist/ExtUtils-ParseXS/t/510-t-bare.t				ExtUtils::Typemaps tests
 dist/ExtUtils-ParseXS/t/511-t-whitespace.t			ExtUtils::Typemaps tests
@@ -3218,6 +3219,7 @@ dist/ExtUtils-ParseXS/t/XSTest.pm				Test file for ExtUtils::ParseXS tests
 dist/ExtUtils-ParseXS/t/XSTest.xs				Test file for ExtUtils::ParseXS tests
 dist/ExtUtils-ParseXS/t/XSUsage.pm				ExtUtils::ParseXS tests
 dist/ExtUtils-ParseXS/t/XSUsage.xs				ExtUtils::ParseXS tests
+dist/ExtUtils-ParseXS/t/XSWarn.xs				ExtUtils::ParseXS tests
 dist/File-CheckTree/lib/File/CheckTree.pm	Perl module supporting wholesale file mode validation
 dist/File-CheckTree/t/CheckTree.t		See if File::CheckTree works
 dist/Filter-Simple/lib/Filter/Simple.pm				Simple frontend to Filter::Util::Call
@@ -3441,7 +3443,11 @@ dist/Safe/t/safesort.t		Tests Safe with sort
 dist/Safe/t/safeuniversal.t	Tests Safe with functions from universal.c
 dist/Safe/t/safeutf8.t		Tests Safe with utf8.pm
 dist/Safe/t/safewrap.t		Tests Safe::wrap_code_ref()
+dist/Search-Dict/Changes		Change log
 dist/Search-Dict/lib/Search/Dict.pm	Perform binary search on dictionaries
+dist/Search-Dict/Makefile.PL		Makefile.PL
+dist/Search-Dict/README.patching	Patch instructions
+dist/Search-Dict/README.release		Release instructions
 dist/Search-Dict/t/Dict.t		See if Search::Dict works
 dist/SelfLoader/lib/SelfLoader.pm	Load functions only on demand
 dist/SelfLoader/t/01SelfLoader.t	See if SelfLoader works
@@ -3700,7 +3706,6 @@ ext/DynaLoader/dl_next.xs	NeXT implementation
 ext/DynaLoader/dl_none.xs	Stub implementation
 ext/DynaLoader/dl_symbian.xs	Symbian implementation
 ext/DynaLoader/dlutils.c	Dynamic loader utilities for dl_*.xs files
-ext/DynaLoader/dl_vmesa.xs	VM/ESA implementation
 ext/DynaLoader/dl_vms.xs	VMS implementation
 ext/DynaLoader/dl_win32.xs	Win32 implementation
 ext/DynaLoader/DynaLoader_pm.PL	Dynamic Loader perl module
@@ -4188,11 +4193,11 @@ hints/unicos.sh			Hints for named architecture
 hints/unisysdynix.sh		Hints for named architecture
 hints/utekv.sh			Hints for named architecture
 hints/uwin.sh			Hints for named architecture
-hints/vmesa.sh			Hints for named architecture
 hints/vos.sh			Hints for named architecture
 hv.c				Hash value code
 hv.h				Hash value header
 inline.h			Static inline functions
+inline_invlist.c		Inline functions for handling inversion lists
 INSTALL				Detailed installation instructions
 installhtml			Perl script to install html files for pods
 install_lib.pl			functions shared between install* scripts
@@ -4326,7 +4331,9 @@ lib/perl5db/t/rt-66110		Tests for the Perl debugger
 lib/perl5db/t/symbol-table-bug	Tests for the Perl debugger
 lib/perl5db/t/taint		Tests for the Perl debugger
 lib/perl5db/t/test-l-statement-1	Tests for the Perl debugger
+lib/perl5db/t/test-l-statement-2	Tests for the Perl debugger
 lib/perl5db/t/test-r-statement	Tests for the Perl debugger
+lib/perl5db/t/test-w-statement-1	Tests for the Perl debugger
 lib/perl5db/t/uncalled-subroutine	Tests for the Perl debugger
 lib/perl5db/t/with-subroutine		Tests for the Perl debugger
 lib/PerlIO.pm			PerlIO support module
@@ -4886,7 +4893,6 @@ README.solaris			Perl notes for Solaris
 README.symbian			Perl notes for Symbian
 README.tru64			Perl notes for Tru64
 README.tw			Perl for Traditional Chinese (in Big5)
-README.vmesa			Perl notes for VM/ESA
 README.vms			Notes about installing the VMS port
 README.vos			Perl notes for Stratus VOS
 README.win32			Perl notes for Windows
@@ -4913,6 +4919,7 @@ regen/regcharclass.pl		Generate regcharclass.h from inline data
 regen/regcomp.pl		Builder of regnodes.h
 regen/regen_lib.pl		Common file routines for generator scripts
 regen/uconfig_h.pl		generate uconfig.h (requires /bin/sh)
+regen/utf8_strings.pl		generate utf8_strings.h
 regen/warnings.pl		Program to write warnings.h and lib/warnings.pm
 regexec.c			Regular expression evaluator
 regexp.h			Public declarations for the above
@@ -5368,6 +5375,7 @@ t/op/sub_lval.t			See if lvalue subroutines work
 t/op/substr.t			See if substr works
 t/op/substr_thr.t		See if substr works in another thread
 t/op/sub.t			See if subroutines work
+t/op/svleak.pl			Test file for svleak.t
 t/op/svleak.t			See if stuff leaks SVs
 t/op/switch.t			See if switches (given/when) work
 t/op/symbolcache.t		See if undef/delete works on stashes with functions
@@ -5475,6 +5483,7 @@ t/re/substT.t			See if substitution works with -T
 t/re/subst_wamp.t		See if substitution works with $& present
 t/re/uniprops.t			Test unicode \p{} regex constructs
 t/run/cloexec.t			Test close-on-exec.
+t/run/dtrace.pl			For dtrace.t
 t/run/dtrace.t			Test for DTrace probes
 t/run/exit.t			Test perl's exit status.
 t/run/fresh_perl.t		Tests that require a fresh perl.
@@ -5550,6 +5559,7 @@ universal.c			The default UNIVERSAL package methods
 unixish.h			Defines that are assumed on Unix
 utf8.c				Unicode routines
 utf8.h				Unicode header
+utf8_strings.h			compile-time macros for characters in UTF-8
 utfebcdic.h			Unicode on EBCDIC (UTF-EBCDIC, tr16) header
 util.c				Utility routines
 util.h				Dummy header
@@ -5583,9 +5593,6 @@ utils/shasum.PL			filter for computing SHA digests (analogous to md5sum)
 utils/splain.PL			Stand-alone version of diagnostics.pm
 utils/xsubpp.PL			External subroutine preprocessor
 utils/zipdetails.PL			display the internal structure of zip files
-vmesa/Makefile			VM/ESA Makefile
-vmesa/vmesa.c			VM/ESA-specific C code for Perl core
-vmesa/vmesaish.h		VM/ESA-specific C header for Perl core
 vms/descrip_mms.template	Template MM[SK] description file for build
 vms/ext/Filespec.pm		VMS-Unix file syntax interconversion
 vms/ext/filespec.t		See if VMS::Filespec functions work

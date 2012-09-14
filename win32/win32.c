@@ -99,35 +99,6 @@ END_EXTERN_C
 #  define getlogin g_getlogin
 #endif
 
-static void		get_shell(void);
-static long		tokenize(const char *str, char **dest, char ***destv);
-static int		do_spawn2(pTHX_ const char *cmd, int exectype);
-static BOOL		has_shell_metachars(const char *ptr);
-static long		filetime_to_clock(PFILETIME ft);
-static BOOL		filetime_from_time(PFILETIME ft, time_t t);
-static char *		get_emd_part(SV **leading, STRLEN *const len,
-				     char *trailing, ...);
-static void		remove_dead_process(long deceased);
-static long		find_pid(int pid);
-static char *		qualified_path(const char *cmd);
-static char *		win32_get_xlib(const char *pl, const char *xlib,
-				       const char *libname, STRLEN *const len);
-static LRESULT  win32_process_message(HWND hwnd, UINT msg,
-                       WPARAM wParam, LPARAM lParam);
-
-#ifdef USE_ITHREADS
-static void		remove_dead_pseudo_process(long child);
-static long		find_pseudo_pid(int pid);
-static HWND		get_hwnd_delay(pTHX, long child, DWORD tries);
-#endif
-
-START_EXTERN_C
-HANDLE	w32_perldll_handle = INVALID_HANDLE_VALUE;
-char	w32_module_name[MAX_PATH+1];
-END_EXTERN_C
-
-static OSVERSIONINFO g_osver = {0, 0, 0, 0, 0, ""};
-
 /* VS2005 (MSC version 14) provides a mechanism to set an invalid
  * parameter handler.  This functionality is not available in the
  * 64-bit compiler from the Platform SDK, which unfortunately also
@@ -144,16 +115,90 @@ static OSVERSIONINFO g_osver = {0, 0, 0, 0, 0, ""};
 #endif
 
 #ifdef SET_INVALID_PARAMETER_HANDLER
-void my_invalid_parameter_handler(const wchar_t* expression,
+static BOOL	set_silent_invalid_parameter_handler(BOOL newvalue);
+static void	my_invalid_parameter_handler(const wchar_t* expression,
+			const wchar_t* function, const wchar_t* file,
+			unsigned int line, uintptr_t pReserved);
+#endif
+
+static char*	get_regstr_from(HKEY hkey, const char *valuename, SV **svp);
+static char*	get_regstr(const char *valuename, SV **svp);
+static char*	get_emd_part(SV **prev_pathp, STRLEN *const len,
+			char *trailing, ...);
+static char*	win32_get_xlib(const char *pl, const char *xlib,
+			const char *libname, STRLEN *const len);
+static BOOL	has_shell_metachars(const char *ptr);
+static long	tokenize(const char *str, char **dest, char ***destv);
+static void	get_shell(void);
+static char*	find_next_space(const char *s);
+static int	do_spawn2(pTHX_ const char *cmd, int exectype);
+static long	find_pid(int pid);
+static void	remove_dead_process(long child);
+static int	terminate_process(DWORD pid, HANDLE process_handle, int sig);
+static int	my_kill(int pid, int sig);
+static void	out_of_memory(void);
+static char*	wstr_to_str(const wchar_t* wstr);
+static long	filetime_to_clock(PFILETIME ft);
+static BOOL	filetime_from_time(PFILETIME ft, time_t t);
+static char*	create_command_line(char *cname, STRLEN clen,
+			const char * const *args);
+static char*	qualified_path(const char *cmd);
+static void	ansify_path(void);
+static LRESULT	win32_process_message(HWND hwnd, UINT msg,
+			WPARAM wParam, LPARAM lParam);
+
+#ifdef USE_ITHREADS
+static long	find_pseudo_pid(int pid);
+static void	remove_dead_pseudo_process(long child);
+static HWND	get_hwnd_delay(pTHX, long child, DWORD tries);
+#endif
+
+#ifdef HAVE_INTERP_INTERN
+static void	win32_csighandler(int sig);
+#endif
+
+START_EXTERN_C
+HANDLE	w32_perldll_handle = INVALID_HANDLE_VALUE;
+char	w32_module_name[MAX_PATH+1];
+END_EXTERN_C
+
+static OSVERSIONINFO g_osver = {0, 0, 0, 0, 0, ""};
+
+#ifdef SET_INVALID_PARAMETER_HANDLER
+static BOOL silent_invalid_parameter_handler = FALSE;
+
+static BOOL
+set_silent_invalid_parameter_handler(BOOL newvalue)
+{
+#  ifdef _DEBUG
+    BOOL oldvalue = silent_invalid_parameter_handler;
+    silent_invalid_parameter_handler = newvalue;
+    return oldvalue;
+#  endif
+}
+
+static void
+my_invalid_parameter_handler(const wchar_t* expression,
     const wchar_t* function, 
     const wchar_t* file, 
     unsigned int line, 
     uintptr_t pReserved)
 {
 #  ifdef _DEBUG
-    wprintf(L"Invalid parameter detected in function %s."
-            L" File: %s Line: %d\n", function, file, line);
-    wprintf(L"Expression: %s\n", expression);
+    char* ansi_expression;
+    char* ansi_function;
+    char* ansi_file;
+    if (silent_invalid_parameter_handler)
+	return;
+    ansi_expression = wstr_to_str(expression);
+    ansi_function = wstr_to_str(function);
+    ansi_file = wstr_to_str(file);
+    fprintf(stderr, "Invalid parameter detected in function %s. "
+                    "File: %s, line: %d\n", ansi_function, ansi_file, line);
+    fprintf(stderr, "Expression: %s\n", ansi_expression);
+    free(ansi_expression);
+    free(ansi_function);
+    free(ansi_file);
 #  endif
 }
 #endif
@@ -1629,6 +1674,24 @@ out_of_memory(void)
         my_exit(1);
     }
     exit(1);
+}
+
+/* Converts a wide character (UTF-16) string to the Windows ANSI code page,
+ * potentially using the system's default replacement character for any
+ * unrepresentable characters. The caller must free() the returned string. */
+static char*
+wstr_to_str(const wchar_t* wstr)
+{
+    BOOL used_default = FALSE;
+    size_t wlen = wcslen(wstr) + 1;
+    int len = WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, wstr, wlen,
+                                   NULL, 0, NULL, NULL);
+    char* str = malloc(len);
+    if (!str)
+        out_of_memory();
+    WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, wstr, wlen,
+                        str, len, NULL, &used_default);
+    return str;
 }
 
 /* The win32_ansipath() function takes a Unicode filename and converts it
@@ -4295,7 +4358,16 @@ win32_signal(int sig, Sighandler_t subcode)
     dTHX;
     if (sig < SIG_SIZE) {
 	int save_errno = errno;
-	Sighandler_t result = signal(sig, subcode);
+	Sighandler_t result;
+#ifdef SET_INVALID_PARAMETER_HANDLER
+	/* Silence our invalid parameter handler since we expect to make some
+	 * calls with invalid signal numbers giving a SIG_ERR result. */
+	BOOL oldvalue = set_silent_invalid_parameter_handler(TRUE);
+#endif
+	result = signal(sig, subcode);
+#ifdef SET_INVALID_PARAMETER_HANDLER
+	set_silent_invalid_parameter_handler(oldvalue);
+#endif
 	if (result == SIG_ERR) {
 	    result = w32_sighandler[sig];
 	    errno = save_errno;

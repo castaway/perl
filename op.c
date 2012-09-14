@@ -261,18 +261,13 @@ Perl_Slab_to_ro(pTHX_ OPSLAB *slab)
     }
 }
 
-STATIC void
-S_Slab_to_rw(pTHX_ void *op)
+void
+Perl_Slab_to_rw(pTHX_ OPSLAB *const slab)
 {
-    OP * const o = (OP *)op;
-    OPSLAB *slab;
     OPSLAB *slab2;
 
     PERL_ARGS_ASSERT_SLAB_TO_RW;
 
-    if (!o->op_slabbed) return;
-
-    slab = OpSLAB(o);
     if (!slab->opslab_readonly) return;
     slab2 = slab;
     for (; slab2; slab2 = slab2->opslab_next) {
@@ -406,8 +401,14 @@ OP *
 Perl_op_refcnt_inc(pTHX_ OP *o)
 {
     if(o) {
-	Slab_to_rw(o);
-	++o->op_targ;
+        OPSLAB *const slab = o->op_slabbed ? OpSLAB(o) : NULL;
+        if (slab && slab->opslab_readonly) {
+            Slab_to_rw(slab);
+            ++o->op_targ;
+            Slab_to_ro(slab);
+        } else {
+            ++o->op_targ;
+        }
     }
     return o;
 
@@ -416,9 +417,19 @@ Perl_op_refcnt_inc(pTHX_ OP *o)
 PADOFFSET
 Perl_op_refcnt_dec(pTHX_ OP *o)
 {
+    PADOFFSET result;
+    OPSLAB *const slab = o->op_slabbed ? OpSLAB(o) : NULL;
+
     PERL_ARGS_ASSERT_OP_REFCNT_DEC;
-    Slab_to_rw(o);
-    return --o->op_targ;
+
+    if (slab && slab->opslab_readonly) {
+        Slab_to_rw(slab);
+        result = --o->op_targ;
+        Slab_to_ro(slab);
+    } else {
+        result = --o->op_targ;
+    }
+    return result;
 }
 #endif
 /*
@@ -698,7 +709,9 @@ Perl_op_free(pTHX_ OP *o)
     if (type == OP_NULL)
 	type = (OPCODE)o->op_targ;
 
-    Slab_to_rw(o);
+    if (o->op_slabbed) {
+	Slab_to_rw(OpSLAB(o));
+    }
 
     /* COP* is not cleared by op_clear() so that we may track line
      * numbers etc even after null() */
@@ -1085,8 +1098,11 @@ S_scalarboolean(pTHX_ OP *o)
 	if (ckWARN(WARN_SYNTAX)) {
 	    const line_t oldline = CopLINE(PL_curcop);
 
-	    if (PL_parser && PL_parser->copline != NOLINE)
+	    if (PL_parser && PL_parser->copline != NOLINE) {
+		/* This ensures that warnings are reported at the first line
+                   of the conditional, not the last.  */
 		CopLINE_set(PL_curcop, PL_parser->copline);
+            }
 	    Perl_warner(aTHX_ packWARN(WARN_SYNTAX), "Found = in conditional, should be ==");
 	    CopLINE_set(PL_curcop, oldline);
 	}
@@ -2966,6 +2982,21 @@ Perl_newPROG(pTHX_ OP *o)
     }
     else {
 	if (o->op_type == OP_STUB) {
+            /* This block is entered if nothing is compiled for the main
+               program. This will be the case for an genuinely empty main
+               program, or one which only has BEGIN blocks etc, so already
+               run and freed.
+
+               Historically (5.000) the guard above was !o. However, commit
+               f8a08f7b8bd67b28 (Jun 2001), integrated to blead as
+               c71fccf11fde0068, changed perly.y so that newPROG() is now
+               called with the output of block_end(), which returns a new
+               OP_STUB for the case of an empty optree. ByteLoader (and
+               maybe other things) also take this path, because they set up
+               PL_main_start and PL_main_root directly, without generating an
+               optree.
+            */
+
 	    PL_comppad_name = 0;
 	    PL_compcv = 0;
 	    S_op_destroy(aTHX_ o);
@@ -5605,8 +5636,7 @@ Perl_newSTATEOP(pTHX_ I32 flags, char *label, OP *o)
         CopLINE_set(cop, CopLINE(PL_curcop));
     else {
 	CopLINE_set(cop, PL_parser->copline);
-	if (PL_parser)
-	    PL_parser->copline = NOLINE;
+	PL_parser->copline = NOLINE;
     }
 #ifdef USE_ITHREADS
     CopFILE_set(cop, CopFILE(PL_curcop));	/* XXX share in a pvtable? */
@@ -5832,6 +5862,8 @@ S_new_logop(pTHX_ I32 type, I32 flags, OP** firstp, OP** otherp)
 	}
 	if (warnop) {
 	    const line_t oldline = CopLINE(PL_curcop);
+            /* This ensures that warnings are reported at the first line
+               of the construction, not the last.  */
 	    CopLINE_set(PL_curcop, PL_parser->copline);
 	    Perl_warner(aTHX_ packWARN(WARN_MISC),
 		 "Value of %s%s can be \"0\"; test with defined()",
@@ -6616,7 +6648,7 @@ I<cond> supplies the expression that will be locally assigned to a lexical
 variable, and I<block> supplies the body of the C<given> construct; they
 are consumed by this function and become part of the constructed op tree.
 I<defsv_off> is the pad offset of the scalar lexical variable that will
-be affected.
+be affected.  If it is 0, the global $_ will be used.
 
 =cut
 */
@@ -7018,8 +7050,11 @@ Perl_newATTRSUB_flags(pTHX_ I32 floor, OP *o, OP *proto, OP *attrs,
 #endif
 		) {
 		const line_t oldline = CopLINE(PL_curcop);
-		if (PL_parser && PL_parser->copline != NOLINE)
+		if (PL_parser && PL_parser->copline != NOLINE) {
+                        /* This ensures that warnings are reported at the first
+                           line of a redefinition, not the last.  */
 			CopLINE_set(PL_curcop, PL_parser->copline);
+                }
 		report_redefined_cv(cSVOPo->op_sv, cv, &const_sv);
 		CopLINE_set(PL_curcop, oldline);
 #ifdef PERL_MAD
@@ -7425,14 +7460,10 @@ Perl_newXS_len_flags(pTHX_ const char *name, STRLEN len,
                 /* Redundant check that allows us to avoid creating an SV
                    most of the time: */
                 if (CvCONST(cv) || ckWARN(WARN_REDEFINE)) {
-                    const line_t oldline = CopLINE(PL_curcop);
-                    if (PL_parser && PL_parser->copline != NOLINE)
-                        CopLINE_set(PL_curcop, PL_parser->copline);
                     report_redefined_cv(newSVpvn_flags(
                                          name,len,(flags&SVf_UTF8)|SVs_TEMP
                                         ),
                                         cv, const_svp);
-                    CopLINE_set(PL_curcop, oldline);
                 }
                 SvREFCNT_dec(cv);
                 cv = NULL;
@@ -10206,34 +10237,6 @@ Perl_ck_length(pTHX_ OP *o)
     return o;
 }
 
-/* caller is supposed to assign the return to the 
-   container of the rep_op var */
-STATIC OP *
-S_opt_scalarhv(pTHX_ OP *rep_op) {
-    dVAR;
-    UNOP *unop;
-
-    PERL_ARGS_ASSERT_OPT_SCALARHV;
-
-    NewOp(1101, unop, 1, UNOP);
-    unop->op_type = (OPCODE)OP_BOOLKEYS;
-    unop->op_ppaddr = PL_ppaddr[OP_BOOLKEYS];
-    unop->op_flags = (U8)(OPf_WANT_SCALAR | OPf_KIDS );
-    unop->op_private = (U8)(1 | ((OPf_WANT_SCALAR | OPf_KIDS) >> 8));
-    unop->op_first = rep_op;
-    unop->op_next = rep_op->op_next;
-    rep_op->op_next = (OP*)unop;
-    rep_op->op_flags|=(OPf_REF | OPf_MOD);
-    unop->op_sibling = rep_op->op_sibling;
-    rep_op->op_sibling = NULL;
-    /* unop->op_targ = pad_alloc(OP_BOOLKEYS, SVs_PADTMP); */
-    if (rep_op->op_type == OP_PADHV) { 
-        rep_op->op_flags &= ~OPf_WANT_SCALAR;
-        rep_op->op_flags |= OPf_WANT_LIST;
-    }
-    return (OP*)unop;
-}                        
-
 /* Check for in place reverse and sort assignments like "@a = reverse @a"
    and modify the optree to make them work inplace */
 
@@ -10525,10 +10528,18 @@ Perl_rpeep(pTHX_ register OP *o)
             OP *fop;
             OP *sop;
             
+#define HV_OR_SCALARHV(op)                                   \
+    (  (op)->op_type == OP_PADHV || (op)->op_type == OP_RV2HV \
+       ? (op)                                                  \
+       : (op)->op_type == OP_SCALAR && (op)->op_flags & OPf_KIDS \
+       && (  cUNOPx(op)->op_first->op_type == OP_PADHV          \
+          || cUNOPx(op)->op_first->op_type == OP_RV2HV)          \
+         ? cUNOPx(op)->op_first                                   \
+         : NULL)
+
         case OP_NOT:
-            fop = cUNOP->op_first;
-            sop = NULL;
-            goto stitch_keys;
+            if ((fop = HV_OR_SCALARHV(cUNOP->op_first)))
+                fop->op_private |= OPpTRUEBOOL;
             break;
 
         case OP_AND:
@@ -10543,12 +10554,10 @@ Perl_rpeep(pTHX_ register OP *o)
 		o->op_next = o->op_next->op_next;
 	    DEFER(cLOGOP->op_other);
           
-          stitch_keys:	    
 	    o->op_opt = 1;
-            if ((fop->op_type == OP_PADHV || fop->op_type == OP_RV2HV)
-                || ( sop && 
-                     (sop->op_type == OP_PADHV || sop->op_type == OP_RV2HV)
-                    )
+            fop = HV_OR_SCALARHV(fop);
+            if (sop) sop = HV_OR_SCALARHV(sop);
+            if (fop || sop
             ){	
                 OP * nop = o;
                 OP * lop = o;
@@ -10570,24 +10579,33 @@ Perl_rpeep(pTHX_ register OP *o)
                         }
                     }            
                 }
-                if ((lop->op_flags & OPf_WANT) == OPf_WANT_VOID) {
-                    if (fop->op_type == OP_PADHV || fop->op_type == OP_RV2HV) 
-                        cLOGOP->op_first = opt_scalarhv(fop);
-                    if (sop && (sop->op_type == OP_PADHV || sop->op_type == OP_RV2HV)) 
-                        cLOGOP->op_first->op_sibling = opt_scalarhv(sop);
-                }                                        
+                if (fop) {
+                    if (  (lop->op_flags & OPf_WANT) == OPf_WANT_VOID
+                      || o->op_type == OP_AND  )
+                        fop->op_private |= OPpTRUEBOOL;
+                    else if (!(lop->op_flags & OPf_WANT))
+                        fop->op_private |= OPpMAYBE_TRUEBOOL;
+                }
+                if (  (lop->op_flags & OPf_WANT) == OPf_WANT_VOID
+                   && sop)
+                    sop->op_private |= OPpTRUEBOOL;
             }                  
             
 	    
 	    break;
-	}    
 	
+	case OP_COND_EXPR:
+	    if ((fop = HV_OR_SCALARHV(cLOGOP->op_first)))
+		fop->op_private |= OPpTRUEBOOL;
+#undef HV_OR_SCALARHV
+	    /* GERONIMO! */
+	}    
+
 	case OP_MAPWHILE:
 	case OP_GREPWHILE:
 	case OP_ANDASSIGN:
 	case OP_ORASSIGN:
 	case OP_DORASSIGN:
-	case OP_COND_EXPR:
 	case OP_RANGE:
 	case OP_ONCE:
 	    while (cLOGOP->op_other->op_type == OP_NULL)

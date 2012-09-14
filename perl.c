@@ -860,7 +860,7 @@ perl_destruct(pTHXx)
     PL_minus_F      = FALSE;
     PL_doswitches   = FALSE;
     PL_dowarn       = G_WARN_OFF;
-    PL_sawampersand = FALSE;	/* must save all match strings */
+    PL_sawampersand = 0;	/* must save all match strings */
     PL_unsafe       = FALSE;
 
     Safefree(PL_inplace);
@@ -2343,8 +2343,9 @@ STATIC void
 S_run_body(pTHX_ I32 oldscope)
 {
     dVAR;
-    DEBUG_r(PerlIO_printf(Perl_debug_log, "%s $` $& $' support.\n",
-                    PL_sawampersand ? "Enabling" : "Omitting"));
+    DEBUG_r(PerlIO_printf(Perl_debug_log, "%s $` $& $' support (0x%x).\n",
+                    PL_sawampersand ? "Enabling" : "Omitting",
+                    (unsigned int)(PL_sawampersand)));
 
     if (!PL_restartop) {
 #ifdef PERL_MAD
@@ -2641,7 +2642,6 @@ Perl_call_sv(pTHX_ SV *sv, VOL I32 flags)
     }
 
     Zero(&myop, 1, LOGOP);
-    myop.op_next = NULL;
     if (!(flags & G_NOARGS))
 	myop.op_flags |= OPf_STACKED;
     myop.op_flags |= OP_GIMME_REVERSE(flags);
@@ -2660,11 +2660,11 @@ Perl_call_sv(pTHX_ SV *sv, VOL I32 flags)
 	    * curstash may be meaningless. */
 	  && (SvTYPE(sv) != SVt_PVCV || CvSTASH((const CV *)sv) != PL_debstash)
 	  && !(flags & G_NODEBUG))
-	PL_op->op_private |= OPpENTERSUB_DB;
+	myop.op_private |= OPpENTERSUB_DB;
 
     if (flags & G_METHOD) {
 	Zero(&method_op, 1, UNOP);
-	method_op.op_next = PL_op;
+	method_op.op_next = (OP*)&myop;
 	method_op.op_ppaddr = PL_ppaddr[OP_METHOD];
 	method_op.op_type = OP_METHOD;
 	myop.op_ppaddr = PL_ppaddr[OP_ENTERSUB];
@@ -2771,13 +2771,12 @@ Perl_eval_sv(pTHX_ SV *sv, I32 flags)
 
     SAVEOP();
     PL_op = (OP*)&myop;
-    Zero(PL_op, 1, UNOP);
+    Zero(&myop, 1, UNOP);
     EXTEND(PL_stack_sp, 1);
     *++PL_stack_sp = sv;
 
     if (!(flags & G_NOARGS))
 	myop.op_flags = OPf_STACKED;
-    myop.op_next = NULL;
     myop.op_type = OP_ENTEREVAL;
     myop.op_flags |= OP_GIMME_REVERSE(flags);
     if (flags & G_KEEPERR)
@@ -3452,10 +3451,6 @@ S_minus_v(pTHX)
 #ifdef __VOS__
 	PerlIO_printf(PerlIO_stdout(),
 		      "Stratus VOS port by Paul.Green@stratus.com, 1997-2002\n");
-#endif
-#ifdef __OPEN_VM
-	PerlIO_printf(PerlIO_stdout(),
-		      "VM/ESA port by Neale Ferguson, 1998-1999\n");
 #endif
 #ifdef POSIX_BC
 	PerlIO_printf(PerlIO_stdout(),

@@ -31,11 +31,13 @@
 #include "EXTERN.h"
 #define PERL_IN_UTF8_C
 #include "perl.h"
+#include "inline_invlist.c"
 
 #ifndef EBCDIC
 /* Separate prototypes needed because in ASCII systems these are
  * usually macros but they still are compiled as code, too. */
 PERL_CALLCONV UV	Perl_utf8n_to_uvchr(pTHX_ const U8 *s, STRLEN curlen, STRLEN *retlen, U32 flags);
+PERL_CALLCONV UV	Perl_valid_utf8_to_uvchr(pTHX_ const U8 *s, STRLEN *retlen);
 PERL_CALLCONV U8*	Perl_uvchr_to_utf8(pTHX_ U8 *d, UV uv);
 #endif
 
@@ -920,7 +922,8 @@ Perl_utf8_to_uvchr_buf(pTHX_ const U8 *s, const U8 *send, STRLEN *retlen)
 
 /* Like L</utf8_to_uvchr_buf>(), but should only be called when it is known that
  * there are no malformations in the input UTF-8 string C<s>.  surrogates,
- * non-character code points, and non-Unicode code points are allowed */
+ * non-character code points, and non-Unicode code points are allowed.  A macro
+ * in utf8.h is used to normally avoid this function wrapper */
 
 UV
 Perl_valid_utf8_to_uvchr(pTHX_ const U8 *s, STRLEN *retlen)
@@ -1024,7 +1027,8 @@ Perl_valid_utf8_to_uvuni(pTHX_ const U8 *s, STRLEN *retlen)
     uv &= UTF_START_MASK(expectlen);
 
     /* Now, loop through the remaining bytes, accumulating each into the
-     * working total as we go */
+     * working total as we go.  (I khw tried unrolling the loop for up to 4
+     * bytes, but there was no performance improvement) */
     for (++s; s < send; s++) {
 	uv = UTF8_ACCUMULATE(uv, *s);
     }
@@ -1953,8 +1957,10 @@ S_is_utf8_common(pTHX_ const U8 *const p, SV **swash,
      * validating routine */
     if (!is_utf8_char_buf(p, p + UTF8SKIP(p)))
 	return FALSE;
-    if (!*swash)
-	*swash = swash_init("utf8", swashname, &PL_sv_undef, 1, 0);
+    if (!*swash) {
+        U8 flags = _CORE_SWASH_INIT_ACCEPT_INVLIST;
+        *swash = _core_swash_init("utf8", swashname, &PL_sv_undef, 1, 0, NULL, &flags);
+    }
     return swash_fetch(*swash, p, TRUE) != 0;
 }
 
@@ -2204,13 +2210,13 @@ Perl_is_utf8_mark(pTHX_ const U8 *p)
 }
 
 bool
-Perl_is_utf8_X_begin(pTHX_ const U8 *p)
+Perl_is_utf8_X_regular_begin(pTHX_ const U8 *p)
 {
     dVAR;
 
-    PERL_ARGS_ASSERT_IS_UTF8_X_BEGIN;
+    PERL_ARGS_ASSERT_IS_UTF8_X_REGULAR_BEGIN;
 
-    return is_utf8_common(p, &PL_utf8_X_begin, "_X_Begin");
+    return is_utf8_common(p, &PL_utf8_X_regular_begin, "_X_Regular_Begin");
 }
 
 bool
@@ -2226,21 +2232,51 @@ Perl_is_utf8_X_extend(pTHX_ const U8 *p)
 bool
 Perl_is_utf8_X_prepend(pTHX_ const U8 *p)
 {
+    /* If no code points in the Unicode version being worked on match
+     * GCB=Prepend, this will set PL_utf8_X_prepend to &PL_sv_undef during its
+     * first call.  Otherwise, it will set it to a swash created for it.
+     * swash_fetch() hence can't be used without checking first if it is valid
+     * to do so. */
+
     dVAR;
+    bool initialized = cBOOL(PL_utf8_X_prepend);
+    bool ret;
 
     PERL_ARGS_ASSERT_IS_UTF8_X_PREPEND;
 
-    return is_utf8_common(p, &PL_utf8_X_prepend, "_X_GCB_Prepend");
+    if (PL_utf8_X_prepend == &PL_sv_undef) {
+        return FALSE;
+    }
+
+    if ((ret = is_utf8_common(p, &PL_utf8_X_prepend, "_X_GCB_Prepend"))
+        || initialized)
+    {
+        return ret;
+    }
+
+    /* Here the code point being checked was not a prepend, and we hadn't
+     * initialized PL_utf8_X_prepend, so we don't know if it is just this
+     * particular input code point that didn't match, or if the table is
+     * completely empty. The is_utf8_common() call did the initialization, so
+     * we can inspect the swash's inversion list to find out.  If there are no
+     * elements in its inversion list, it's empty, and nothing will ever match,
+     * so set things up so we can skip the check in future calls. */
+    if (_invlist_len(_get_swash_invlist(PL_utf8_X_prepend)) == 0) {
+        SvREFCNT_dec(PL_utf8_X_prepend);
+        PL_utf8_X_prepend = &PL_sv_undef;
+    }
+
+    return FALSE;
 }
 
 bool
-Perl_is_utf8_X_non_hangul(pTHX_ const U8 *p)
+Perl_is_utf8_X_special_begin(pTHX_ const U8 *p)
 {
     dVAR;
 
-    PERL_ARGS_ASSERT_IS_UTF8_X_NON_HANGUL;
+    PERL_ARGS_ASSERT_IS_UTF8_X_SPECIAL_BEGIN;
 
-    return is_utf8_common(p, &PL_utf8_X_non_hangul, "_X_HST_Not_Applicable");
+    return is_utf8_common(p, &PL_utf8_X_special_begin, "_X_Special_Begin");
 }
 
 bool
@@ -2254,23 +2290,81 @@ Perl_is_utf8_X_L(pTHX_ const U8 *p)
 }
 
 bool
-Perl_is_utf8_X_LV(pTHX_ const U8 *p)
+Perl_is_utf8_X_RI(pTHX_ const U8 *p)
 {
     dVAR;
 
+    PERL_ARGS_ASSERT_IS_UTF8_X_RI;
+
+    return is_utf8_common(p, &PL_utf8_X_RI, "_X_RI");
+}
+
+/* These constants are for finding GCB=LV and GCB=LVT.  These are for the
+ * pre-composed Hangul syllables, which are all in a contiguous block and
+ * arranged there in such a way so as to facilitate alorithmic determination of
+ * their characteristics.  As such, they don't need a swash, but can be
+ * determined by simple arithmetic.  Almost all are GCB=LVT, but every 28th one
+ * is a GCB=LV */
+#define SBASE 0xAC00    /* Start of block */
+#define SCount 11172    /* Length of block */
+#define TCount 28
+
+#if 0   /* This routine is not currently used */
+bool
+Perl_is_utf8_X_LV(pTHX_ const U8 *p)
+{
+    /* Unlike most other similarly named routines here, this does not create a
+     * swash, so swash_fetch() cannot be used on PL_utf8_X_LV. */
+
+    dVAR;
+
+    UV cp = valid_utf8_to_uvchr(p, NULL);
+
     PERL_ARGS_ASSERT_IS_UTF8_X_LV;
 
-    return is_utf8_common(p, &PL_utf8_X_LV, "_X_GCB_LV");
+    /* The earliest Unicode releases did not have these precomposed Hangul
+     * syllables.  Set to point to undef in that case, so will return false on
+     * every call */
+    if (! PL_utf8_X_LV) {   /* Set up if this is the first time called */
+        PL_utf8_X_LV = swash_init("utf8", "_X_GCB_LV", &PL_sv_undef, 1, 0);
+        if (_invlist_len(_get_swash_invlist(PL_utf8_X_LV)) == 0) {
+            SvREFCNT_dec(PL_utf8_X_LV);
+            PL_utf8_X_LV = &PL_sv_undef;
+        }
+    }
+
+    return (PL_utf8_X_LV != &PL_sv_undef
+            && cp >= SBASE && cp < SBASE + SCount
+            && (cp - SBASE) % TCount == 0); /* Only every TCount one is LV */
 }
+#endif
 
 bool
 Perl_is_utf8_X_LVT(pTHX_ const U8 *p)
 {
+    /* Unlike most other similarly named routines here, this does not create a
+     * swash, so swash_fetch() cannot be used on PL_utf8_X_LVT. */
+
     dVAR;
+
+    UV cp = valid_utf8_to_uvchr(p, NULL);
 
     PERL_ARGS_ASSERT_IS_UTF8_X_LVT;
 
-    return is_utf8_common(p, &PL_utf8_X_LVT, "_X_GCB_LVT");
+    /* The earliest Unicode releases did not have these precomposed Hangul
+     * syllables.  Set to point to undef in that case, so will return false on
+     * every call */
+    if (! PL_utf8_X_LVT) {   /* Set up if this is the first time called */
+        PL_utf8_X_LVT = swash_init("utf8", "_X_GCB_LVT", &PL_sv_undef, 1, 0);
+        if (_invlist_len(_get_swash_invlist(PL_utf8_X_LVT)) == 0) {
+            SvREFCNT_dec(PL_utf8_X_LVT);
+            PL_utf8_X_LVT = &PL_sv_undef;
+        }
+    }
+
+    return (PL_utf8_X_LVT != &PL_sv_undef
+            && cp >= SBASE && cp < SBASE + SCount
+            && (cp - SBASE) % TCount != 0); /* All but every TCount one is LV */
 }
 
 bool
@@ -2381,7 +2475,7 @@ Perl_to_utf8_case(pTHX_ const U8 *p, U8* ustrp, STRLEN *lenp,
     uvuni_to_utf8(tmpbuf, uv1);
 
     if (!*swashp) /* load on-demand */
-         *swashp = swash_init("utf8", normal, &PL_sv_undef, 4, 0);
+         *swashp = _core_swash_init("utf8", normal, &PL_sv_undef, 4, 0, NULL, NULL);
 
     if (special) {
          /* It might be "special" (sometimes, but not always,
@@ -2863,14 +2957,18 @@ Perl_swash_init(pTHX_ const char* pkg, const char* name, SV *listsv, I32 minbits
      * public interface, and returning a copy prevents others from doing
      * mischief on the original */
 
-    return newSVsv(_core_swash_init(pkg, name, listsv, minbits, none, FALSE, NULL, FALSE));
+    return newSVsv(_core_swash_init(pkg, name, listsv, minbits, none, NULL, NULL));
 }
 
 SV*
-Perl__core_swash_init(pTHX_ const char* pkg, const char* name, SV *listsv, I32 minbits, I32 none, bool return_if_undef, SV* invlist, bool passed_in_invlist_has_user_defined_property)
+Perl__core_swash_init(pTHX_ const char* pkg, const char* name, SV *listsv, I32 minbits, I32 none, SV* invlist, U8* const flags_p)
 {
     /* Initialize and return a swash, creating it if necessary.  It does this
-     * by calling utf8_heavy.pl in the general case.
+     * by calling utf8_heavy.pl in the general case.  The returned value may be
+     * the swash's inversion list instead if the input parameters allow it.
+     * Which is returned should be immaterial to callers, as the only
+     * operations permitted on a swash, swash_fetch() and
+     * _get_swash_invlist(), handle both these transparently.
      *
      * This interface should only be used by functions that won't destroy or
      * adversely change the swash, as doing so affects all other uses of the
@@ -2886,11 +2984,19 @@ Perl__core_swash_init(pTHX_ const char* pkg, const char* name, SV *listsv, I32 m
      * minbits is the number of bits required to represent each data element.
      *	    It is '1' for binary properties.
      * none I (khw) do not understand this one, but it is used only in tr///.
-     * return_if_undef is TRUE if the routine shouldn't croak if it can't find
-     *	    the requested property
      * invlist is an inversion list to initialize the swash with (or NULL)
-     * has_user_defined_property is TRUE if <invlist> has some component that
-     *      came from a user-defined property
+     * flags_p if non-NULL is the address of various input and output flag bits
+     *      to the routine, as follows:  ('I' means is input to the routine;
+     *      'O' means output from the routine.  Only flags marked O are
+     *      meaningful on return.)
+     *  _CORE_SWASH_INIT_USER_DEFINED_PROPERTY indicates if the swash
+     *      came from a user-defined property.  (I O)
+     *  _CORE_SWASH_INIT_RETURN_IF_UNDEF indicates that instead of croaking
+     *      when the swash cannot be located, to simply return NULL. (I)
+     *  _CORE_SWASH_INIT_ACCEPT_INVLIST indicates that the caller will accept a
+     *      return of an inversion list instead of a swash hash if this routine
+     *      thinks that would result in faster execution of swash_fetch() later
+     *      on. (I)
      *
      * Thus there are three possible inputs to find the swash: <name>,
      * <listsv>, and <invlist>.  At least one must be specified.  The result
@@ -2901,6 +3007,12 @@ Perl__core_swash_init(pTHX_ const char* pkg, const char* name, SV *listsv, I32 m
 
     dVAR;
     SV* retval = &PL_sv_undef;
+    HV* swash_hv = NULL;
+    const int invlist_swash_boundary =
+        (flags_p && *flags_p & _CORE_SWASH_INIT_ACCEPT_INVLIST)
+        ? 512    /* Based on some benchmarking, but not extensive, see commit
+                    message */
+        : -1;   /* Never return just an inversion list */
 
     assert(listsv != &PL_sv_undef || strNE(name, "") || invlist);
     assert(! invlist || minbits == 1);
@@ -2921,6 +3033,10 @@ Perl__core_swash_init(pTHX_ const char* pkg, const char* name, SV *listsv, I32 m
 	ENTER;
 	SAVEHINTS();
 	save_re_context();
+	/* We might get here via a subroutine signature which uses a utf8
+	 * parameter name, at which point PL_subname will have been set
+	 * but not yet used. */
+	save_item(PL_subname);
 	if (PL_parser && PL_parser->error_count)
 	    SAVEI8(PL_parser->error_count), PL_parser->error_count = 0;
 	method = gv_fetchmeth(stash, "SWASHNEW", 8, -1);
@@ -2972,7 +3088,7 @@ Perl__core_swash_init(pTHX_ const char* pkg, const char* name, SV *listsv, I32 m
 	    if (SvPOK(retval))
 
 		/* If caller wants to handle missing properties, let them */
-		if (return_if_undef) {
+		if (flags_p && *flags_p & _CORE_SWASH_INIT_RETURN_IF_UNDEF) {
 		    return NULL;
 		}
 		Perl_croak(aTHX_
@@ -2982,19 +3098,36 @@ Perl__core_swash_init(pTHX_ const char* pkg, const char* name, SV *listsv, I32 m
 	}
     } /* End of calling the module to find the swash */
 
+    /* If this operation fetched a swash, and we will need it later, get it */
+    if (retval != &PL_sv_undef
+        && (minbits == 1 || (flags_p
+                            && ! (*flags_p
+                                  & _CORE_SWASH_INIT_USER_DEFINED_PROPERTY))))
+    {
+        swash_hv = MUTABLE_HV(SvRV(retval));
+
+        /* If we don't already know that there is a user-defined component to
+         * this swash, and the user has indicated they wish to know if there is
+         * one (by passing <flags_p>), find out */
+        if (flags_p && ! (*flags_p & _CORE_SWASH_INIT_USER_DEFINED_PROPERTY)) {
+            SV** user_defined = hv_fetchs(swash_hv, "USER_DEFINED", FALSE);
+            if (user_defined && SvUV(*user_defined)) {
+                *flags_p |= _CORE_SWASH_INIT_USER_DEFINED_PROPERTY;
+            }
+        }
+    }
+
     /* Make sure there is an inversion list for binary properties */
     if (minbits == 1) {
 	SV** swash_invlistsvp = NULL;
 	SV* swash_invlist = NULL;
 	bool invlist_in_swash_is_valid = FALSE;
-	HV* swash_hv = NULL;
 
         /* If this operation fetched a swash, get its already existing
-         * inversion list or create one for it */
-	if (retval != &PL_sv_undef) {
-	    swash_hv = MUTABLE_HV(SvRV(retval));
+         * inversion list, or create one for it */
 
-	    swash_invlistsvp = hv_fetchs(swash_hv, "INVLIST", FALSE);
+        if (swash_hv) {
+	    swash_invlistsvp = hv_fetchs(swash_hv, "V", FALSE);
 	    if (swash_invlistsvp) {
 		swash_invlist = *swash_invlistsvp;
 		invlist_in_swash_is_valid = TRUE;
@@ -3019,28 +3152,32 @@ Perl__core_swash_init(pTHX_ const char* pkg, const char* name, SV *listsv, I32 m
 	    }
 	    else {
 
-		/* Here, there is no swash already.  Set up a minimal one */
-		swash_hv = newHV();
-		retval = newRV_inc(MUTABLE_SV(swash_hv));
+                /* Here, there is no swash already.  Set up a minimal one, if
+                 * we are going to return a swash */
+                if ((int) _invlist_len(invlist) > invlist_swash_boundary) {
+                    swash_hv = newHV();
+                    retval = newRV_inc(MUTABLE_SV(swash_hv));
+                }
 		swash_invlist = invlist;
 	    }
-
-            if (passed_in_invlist_has_user_defined_property) {
-                if (! hv_stores(swash_hv, "USER_DEFINED", newSVuv(1))) {
-                    Perl_croak(aTHX_ "panic: hv_store() unexpectedly failed");
-                }
-            }
 	}
 
         /* Here, we have computed the union of all the passed-in data.  It may
          * be that there was an inversion list in the swash which didn't get
          * touched; otherwise save the one computed one */
-	if (! invlist_in_swash_is_valid) {
-	    if (! hv_stores(MUTABLE_HV(SvRV(retval)), "INVLIST", swash_invlist))
+	if (! invlist_in_swash_is_valid
+            && (int) _invlist_len(swash_invlist) > invlist_swash_boundary)
+        {
+	    if (! hv_stores(MUTABLE_HV(SvRV(retval)), "V", swash_invlist))
             {
 		Perl_croak(aTHX_ "panic: hv_store() unexpectedly failed");
 	    }
 	}
+
+        if ((int) _invlist_len(swash_invlist) <= invlist_swash_boundary) {
+	    SvREFCNT_dec(retval);
+            retval = newRV_inc(swash_invlist);
+        }
     }
 
     return retval;
@@ -3105,6 +3242,15 @@ Perl_swash_fetch(pTHX_ SV *swash, const U8 *ptr, bool do_utf8)
     const UV c = NATIVE_TO_ASCII(*ptr);
 
     PERL_ARGS_ASSERT_SWASH_FETCH;
+
+    /* If it really isn't a hash, it isn't really swash; must be an inversion
+     * list */
+    if (SvTYPE(hv) != SVt_PVHV) {
+        return _invlist_contains_cp((SV*)hv,
+                                    (do_utf8)
+                                     ? valid_utf8_to_uvchr(ptr, NULL)
+                                     : c);
+    }
 
     /* Convert to utf8 if not already */
     if (!do_utf8 && !UNI_IS_INVARIANT(c)) {
@@ -3338,7 +3484,7 @@ S_swatch_get(pTHX_ SV* swash, UV start, UV span)
     U8 *l, *lend, *x, *xend, *s, *send;
     STRLEN lcur, xcur, scur;
     HV *const hv = MUTABLE_HV(SvRV(swash));
-    SV** const invlistsvp = hv_fetchs(hv, "INVLIST", FALSE);
+    SV** const invlistsvp = hv_fetchs(hv, "V", FALSE);
 
     SV** listsvp = NULL; /* The string containing the main body of the table */
     SV** extssvp = NULL;
@@ -4072,26 +4218,24 @@ Perl__swash_to_invlist(pTHX_ SV* const swash)
     return invlist;
 }
 
-bool
-Perl__is_swash_user_defined(pTHX_ SV* const swash)
-{
-    SV** ptr = hv_fetchs(MUTABLE_HV(SvRV(swash)), "USER_DEFINED", FALSE);
-
-    PERL_ARGS_ASSERT__IS_SWASH_USER_DEFINED;
-
-    if (! ptr) {
-        return FALSE;
-    }
-    return cBOOL(SvUV(*ptr));
-}
-
 SV*
 Perl__get_swash_invlist(pTHX_ SV* const swash)
 {
-    SV** ptr = hv_fetchs(MUTABLE_HV(SvRV(swash)), "INVLIST", FALSE);
+    SV** ptr;
 
     PERL_ARGS_ASSERT__GET_SWASH_INVLIST;
 
+    if (! SvROK(swash)) {
+        return NULL;
+    }
+
+    /* If it really isn't a hash, it isn't really swash; must be an inversion
+     * list */
+    if (SvTYPE(SvRV(swash)) != SVt_PVHV) {
+        return SvRV(swash);
+    }
+
+    ptr = hv_fetchs(MUTABLE_HV(SvRV(swash)), "V", FALSE);
     if (! ptr) {
         return NULL;
     }

@@ -15,7 +15,7 @@ BEGIN {
 
 use Config;
 
-plan tests => 22;
+plan tests => 27;
 
 # run some code N times. If the number of SVs at the end of loop N is
 # greater than (N-1)*delta at the end of loop 1, we've got a leak
@@ -172,3 +172,14 @@ SKIP: {
     leak(2, 0, sub { eval q{ my $x = "x"; "abc" =~ /$x/ for 1..5 } }, '#114356');
 }
 
+SKIP: {
+    skip "disabled under -Dmad (eval leaks)", 5 if $Config{mad};
+    leak(2, 0, sub { eval '"${<<END}"
+                 ' }, 'unterminated here-doc in quotes in multiline eval');
+    leak(2, 0, sub { eval '"${<<END
+               }"' }, 'unterminated here-doc in multiline quotes in eval');
+    leak(2, 0, sub { eval { do './op/svleak.pl' } },
+        'unterminated here-doc in file');
+    leak(2, 0, sub { eval 'tr/9-0//' }, 'tr/9-0//');
+    leak(2, 0, sub { eval 'tr/a-z-0//' }, 'tr/a-z-0//');
+}

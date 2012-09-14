@@ -814,6 +814,8 @@ push @tables_that_may_be_empty, 'Script_Extensions=Katakana_Or_Hiragana'
                                                     if $v_version ge v6.0.0;
 push @tables_that_may_be_empty, 'Grapheme_Cluster_Break=Prepend'
                                                     if $v_version ge v6.1.0;
+push @tables_that_may_be_empty, 'Canonical_Combining_Class=CCC133'
+                                                    if $v_version ge v6.2.0;
 
 # The lists below are hashes, so the key is the item in the list, and the
 # value is the reason why it is in the list.  This makes generation of
@@ -3015,6 +3017,10 @@ sub trace { return main::trace(@_); }
 
     our $addr;
 
+    # Max is initialized to a negative value that isn't adjacent to 0, for
+    # simpler tests
+    my $max_init = -2;
+
     main::setup_package();
 
     my %ranges;
@@ -3070,9 +3076,7 @@ sub trace { return main::trace(@_); }
 
         Carp::carp_extra_args(\%args) if main::DEBUG && %args;
 
-        # Max is initialized to a negative value that isn't adjacent to 0,
-        # for simpler tests
-        $max{$addr} = -2;
+        $max{$addr} = $max_init;
 
         $_search_ranges_cache{$addr} = 0;
         $ranges{$addr} = [];
@@ -4157,7 +4161,12 @@ sub trace { return main::trace(@_); }
         # otherwise recalculate it.  This is done too rarely to worry about
         # performance.
         if ($operation eq '-' && @return) {
-            $max{$addr} = $r->[-1]->end;
+            if (@$r) {
+                $max{$addr} = $r->[-1]->end;
+            }
+            else {  # Now empty
+                $max{$addr} = $max_init;
+            }
         }
         return @return;
     }
@@ -13480,9 +13489,10 @@ sub compile_perl() {
 
     $perl_xidc &= $Word;
 
-    # These two tables are for the 'extended' grapheme cluster, which came in
-    # 5.1; create empty ones if not already present.  The non-extended
-    # definition differs from the extended (see
+    # These two tables are for matching \X, which is based on the 'extended'
+    # grapheme cluster, which came in 5.1; create empty ones if not already
+    # present.  The straight 'grapheme cluster' (non-extended) is used prior
+    # to 5.1, and differs from the extended (see
     # http://www.unicode.org/reports/tr29/) only by these two tables, so we
     # get the older definition automatically when they are empty.
     my $gcb = property_ref('Grapheme_Cluster_Break');
@@ -13496,31 +13506,19 @@ sub compile_perl() {
         push @tables_that_may_be_empty, $perl_prepend->complete_name;
     }
 
+    # All the tables with _X_ in their names are used in defining \X handling,
+    # and are based on the Unicode GCB property.  Basically, \X matches:
+    #   CR-LF
+    #   | Prepend* Begin Extend*
+    #   | .
+    # Begin is:           ( Special_Begin | ! Control )
+    # Begin is also:      ( Regular_Begin | Special_Begin )
+    #   where Regular_Begin is defined as ( ! Control - Special_Begin )
+    # Special_Begin is:   ( Regional-Indicator+ | Hangul-syllable )
+    # Extend is:          ( Grapheme_Extend | Spacing_Mark )
+    # Control is:         [ GCB_Control CR LF ]
+    # Hangul-syllable is: ( T+ | ( L* ( L | ( LVT | ( V | LV ) V* ) T* ) ))
 
-    # These are used in Unicode's definition of \X
-    my $begin = $perl->add_match_table('_X_Begin', Perl_Extension => 1,
-                                       Fate => $INTERNAL_ONLY);
-    my $extend = $perl->add_match_table('_X_Extend', Perl_Extension => 1,
-                                        Fate => $INTERNAL_ONLY);
-
-    # In the line below, two negatives means: yes hangul
-    $begin += ~ property_ref('Hangul_Syllable_Type')
-                                                ->table('Not_Applicable')
-            + ~ ($gcb->table('Control')
-                + $gcb->table('CR')
-                + $gcb->table('LF'));
-    $begin->add_comment('For use in \X; matches: Hangul_Syllable | ! Control');
-
-    $extend += $gcb->table('Extend');
-    if (defined (my $sm = $gcb->table('SpacingMark'))) {
-        $extend += $sm;
-    }
-    $extend->add_comment('For use in \X; matches: Extend | SpacingMark');
-
-    # More GCB.  Populate a combined hangul syllables table
-    my $lv_lvt_v = $perl->add_match_table('_X_LV_LVT_V',
-                                          Perl_Extension => 1,
-                                          Fate => $INTERNAL_ONLY);
     foreach my $gcb_name (qw{ L V T LV LVT }) {
 
         # The perl internal extension's name is the gcb table name prepended
@@ -13536,13 +13534,56 @@ sub compile_perl() {
             push @tables_that_may_be_empty, $perl_table->complete_name;
         }
     }
-    $perl->add_match_table('_X_HST_Not_Applicable',
-                            Perl_Extension => 1,
-                            Fate => $INTERNAL_ONLY,
-                            Initialize => property_ref('HST')->table('NA'),
-                            );
+
+    # More GCB.  Populate a combined hangul syllables table
+    my $lv_lvt_v = $perl->add_match_table('_X_LV_LVT_V',
+                                          Perl_Extension => 1,
+                                          Fate => $INTERNAL_ONLY);
     $lv_lvt_v += $gcb->table('LV') + $gcb->table('LVT') + $gcb->table('V');
-    $lv_lvt_v->add_comment('For use in \X; matches: hst=LV | hst=LVT | hst=V');
+    $lv_lvt_v->add_comment('For use in \X; matches: gcb=LV | gcb=LVT | gcb=V');
+
+    my $ri = $perl->add_match_table('_X_RI', Perl_Extension => 1,
+                                    Fate => $INTERNAL_ONLY);
+    $ri += $gcb->table('RI') if $v_version ge v6.2;
+
+    my $specials_begin = $perl->add_match_table('_X_Special_Begin',
+                                       Perl_Extension => 1,
+                                       Fate => $INTERNAL_ONLY,
+                                       Initialize => $lv_lvt_v
+                                                   + $gcb->table('L')
+                                                   + $gcb->table('T')
+                                                   + $ri
+                                      );
+    $specials_begin->add_comment(join_lines( <<END
+For use in \\X; matches first character of potential multi-character
+sequences that can begin an extended grapheme cluster.  They need special
+handling because of their complicated nature.
+END
+    ));
+    my $regular_begin = $perl->add_match_table('_X_Regular_Begin',
+                                       Perl_Extension => 1,
+                                       Fate => $INTERNAL_ONLY,
+                                       Initialize => ~ $gcb->table('Control')
+                                                   - $specials_begin
+                                                   - $gcb->table('CR')
+                                                   - $gcb->table('LF')
+                                      );
+    $regular_begin->add_comment(join_lines( <<END
+For use in \\X; matches first character of anything that can begin an extended
+grapheme cluster, except those that require special handling.
+END
+    ));
+
+    my $extend = $perl->add_match_table('_X_Extend', Perl_Extension => 1,
+                                        Fate => $INTERNAL_ONLY,
+                                        Initialize => $gcb->table('Extend')
+                                       );
+    if (defined (my $sm = $gcb->table('SpacingMark'))) {
+        $extend += $sm;
+    }
+    $extend->add_comment('For use in \X; matches: Extend | SpacingMark');
+
+    # End of GCB \X processing
 
     my @composition = ('Name', 'Unicode_1_Name', 'Name_Alias');
 
@@ -17331,13 +17372,14 @@ my @input_file_objects = (
                     Property => 'Composition_Exclusion',
                     ),
     Input_file->new('BidiMirroring.txt', v3.0.1,
-                    Has_Missings_Defaults => ($v_version lt v6.2.0)
-                                             ? $NO_DEFAULTS
-                                             # Is <none> which doesn't mean
-                                             # anything to us, we will use the
-                                             # null string
-                                             : $IGNORED,
                     Property => 'Bidi_Mirroring_Glyph',
+                    Has_Missings_Defaults => ($v_version lt v6.2.0)
+                                              ? $NO_DEFAULTS
+                                              # Is <none> which doesn't mean
+                                              # anything to us, we will use the
+                                              # null string
+                                              : $IGNORED,
+
                     ),
     Input_file->new("NormTest.txt", v3.0.0,
                      Handler => \&process_NormalizationsTest,

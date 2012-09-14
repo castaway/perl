@@ -88,6 +88,8 @@ extern const struct regexp_engine my_reg_engine;
 
 #include "dquote_static.c"
 #include "charclass_invlists.h"
+#include "inline_invlist.c"
+#include "utf8_strings.h"
 
 #define HAS_NONLATIN1_FOLD_CLOSURE(i) _HAS_NONLATIN1_FOLD_CLOSURE_ONLY_FOR_USE_BY_REGCOMP_DOT_C_AND_REGEXEC_DOT_C(i)
 #define IS_NON_FINAL_FOLD(c) _IS_NON_FINAL_FOLD_ONLY_FOR_USE_BY_REGCOMP_DOT_C(c)
@@ -2824,18 +2826,15 @@ S_join_exact(pTHX_ RExC_state_t *pRExC_state, regnode *scan, UV *min_subtract, b
 	     * LETTER SHARP S.  We decrease the min length by 1 for each
 	     * occurrence of 'ss' found */
 
-#ifdef EBCDIC /* RD tunifold greek 0390 and 03B0 */
-#	    define U390_first_byte 0xb4
-	    const U8 U390_tail[] = "\x68\xaf\x49\xaf\x42";
-#	    define U3B0_first_byte 0xb5
-	    const U8 U3B0_tail[] = "\x46\xaf\x49\xaf\x42";
-#else
-#	    define U390_first_byte 0xce
-	    const U8 U390_tail[] = "\xb9\xcc\x88\xcc\x81";
-#	    define U3B0_first_byte 0xcf
-	    const U8 U3B0_tail[] = "\x85\xcc\x88\xcc\x81";
-#endif
-	    const U8 len = sizeof(U390_tail); /* (-1 for NUL; +1 for 1st byte;
+#define U390_FIRST_BYTE GREEK_SMALL_LETTER_IOTA_UTF8_FIRST_BYTE
+#define U3B0_FIRST_BYTE GREEK_SMALL_LETTER_UPSILON_UTF8_FIRST_BYTE
+	    const U8 U390_tail[] = GREEK_SMALL_LETTER_IOTA_UTF8_TAIL
+                                   COMBINING_DIAERESIS_UTF8
+                                   COMBINING_ACUTE_ACCENT_UTF8;
+	    const U8 U3B0_tail[] = GREEK_SMALL_LETTER_UPSILON_UTF8_TAIL
+                                   COMBINING_DIAERESIS_UTF8
+                                   COMBINING_ACUTE_ACCENT_UTF8;
+            const U8 len = sizeof(U390_tail); /* (-1 for NUL; +1 for 1st byte;
 						 yields a net of 0 */
 	    /* Examine the string for one of the problematic sequences */
 	    for (s = s0;
@@ -2865,7 +2864,7 @@ S_join_exact(pTHX_ RExC_state_t *pRExC_state, regnode *scan, UV *min_subtract, b
 			}
 			break;
 
-		    case U390_first_byte:
+		    case U390_FIRST_BYTE:
 			if (s_end - s >= len
 
 			    /* The 1's are because are skipping comparing the
@@ -2876,7 +2875,7 @@ S_join_exact(pTHX_ RExC_state_t *pRExC_state, regnode *scan, UV *min_subtract, b
 			}
 			break;
 
-		    case U3B0_first_byte:
+		    case U3B0_FIRST_BYTE:
 			if (! (s_end - s >= len
 			       && memEQ(s + 1, U3B0_tail, len - 1)))
 			{
@@ -5502,8 +5501,11 @@ Perl_re_op_compile(pTHX_ SV ** const patternp, int pat_count,
 		else  {
                     while (SvAMAGIC(msv)
                             && (sv = AMG_CALLunary(msv, string_amg))
-                            && sv != msv)
-                    {
+                            && sv != msv
+                            &&  !(   SvROK(msv)
+                                  && SvROK(sv)
+                                  && SvRV(msv) == SvRV(sv))
+                    ) {
                         msv = sv;
                         SvGETMAGIC(msv);
                     }
@@ -6692,37 +6694,53 @@ Perl_reg_numbered_buff_fetch(pTHX_ REGEXP * const r, const I32 paren,
     char *s = NULL;
     I32 i = 0;
     I32 s1, t1;
+    I32 n = paren;
 
     PERL_ARGS_ASSERT_REG_NUMBERED_BUFF_FETCH;
         
-    if (!rx->subbeg) {
-        sv_setsv(sv,&PL_sv_undef);
-        return;
-    } 
-    else               
-    if (paren == RX_BUFF_IDX_PREMATCH && rx->offs[0].start != -1) {
-        /* $` */
+    if ( (    n == RX_BUFF_IDX_CARET_PREMATCH
+           || n == RX_BUFF_IDX_CARET_FULLMATCH
+           || n == RX_BUFF_IDX_CARET_POSTMATCH
+         )
+         && !(rx->extflags & RXf_PMf_KEEPCOPY)
+    )
+        goto ret_undef;
+
+    if (!rx->subbeg)
+        goto ret_undef;
+
+    if (n == RX_BUFF_IDX_CARET_FULLMATCH)
+        /* no need to distinguish between them any more */
+        n = RX_BUFF_IDX_FULLMATCH;
+
+    if ((n == RX_BUFF_IDX_PREMATCH || n == RX_BUFF_IDX_CARET_PREMATCH)
+        && rx->offs[0].start != -1)
+    {
+        /* $`, ${^PREMATCH} */
 	i = rx->offs[0].start;
 	s = rx->subbeg;
     }
     else 
-    if (paren == RX_BUFF_IDX_POSTMATCH && rx->offs[0].end != -1) {
-        /* $' */
-	s = rx->subbeg + rx->offs[0].end;
-	i = rx->sublen - rx->offs[0].end;
+    if ((n == RX_BUFF_IDX_POSTMATCH || n == RX_BUFF_IDX_CARET_POSTMATCH)
+        && rx->offs[0].end != -1)
+    {
+        /* $', ${^POSTMATCH} */
+	s = rx->subbeg - rx->suboffset + rx->offs[0].end;
+	i = rx->sublen + rx->suboffset - rx->offs[0].end;
     } 
     else
-    if ( 0 <= paren && paren <= (I32)rx->nparens &&
-        (s1 = rx->offs[paren].start) != -1 &&
-        (t1 = rx->offs[paren].end) != -1)
+    if ( 0 <= n && n <= (I32)rx->nparens &&
+        (s1 = rx->offs[n].start) != -1 &&
+        (t1 = rx->offs[n].end) != -1)
     {
-        /* $& $1 ... */
+        /* $&, ${^MATCH},  $1 ... */
         i = t1 - s1;
-        s = rx->subbeg + s1;
+        s = rx->subbeg + s1 - rx->suboffset;
     } else {
-        sv_setsv(sv,&PL_sv_undef);
-        return;
+        goto ret_undef;
     }          
+
+    assert(s >= rx->subbeg);
     assert(rx->sublen >= (s - rx->subbeg) + i );
     if (i >= 0) {
         const int oldtainted = PL_tainted;
@@ -6758,6 +6776,7 @@ Perl_reg_numbered_buff_fetch(pTHX_ REGEXP * const r, const I32 paren,
                 SvTAINTED_off(sv);
         }
     } else {
+      ret_undef:
         sv_setsv(sv,&PL_sv_undef);
         return;
     }
@@ -6788,9 +6807,13 @@ Perl_reg_numbered_buff_length(pTHX_ REGEXP * const r, const SV * const sv,
     PERL_ARGS_ASSERT_REG_NUMBERED_BUFF_LENGTH;
 
     /* Some of this code was originally in C<Perl_magic_len> in F<mg.c> */
-	switch (paren) {
-      /* $` / ${^PREMATCH} */
-      case RX_BUFF_IDX_PREMATCH:
+    switch (paren) {
+      case RX_BUFF_IDX_CARET_PREMATCH: /* ${^PREMATCH} */
+         if (!(rx->extflags & RXf_PMf_KEEPCOPY))
+            goto warn_undef;
+        /*FALLTHROUGH*/
+
+      case RX_BUFF_IDX_PREMATCH:       /* $` */
         if (rx->offs[0].start != -1) {
 			i = rx->offs[0].start;
 			if (i > 0) {
@@ -6800,8 +6823,11 @@ Perl_reg_numbered_buff_length(pTHX_ REGEXP * const r, const SV * const sv,
 			}
 	    }
         return 0;
-      /* $' / ${^POSTMATCH} */
-      case RX_BUFF_IDX_POSTMATCH:
+
+      case RX_BUFF_IDX_CARET_POSTMATCH: /* ${^POSTMATCH} */
+         if (!(rx->extflags & RXf_PMf_KEEPCOPY))
+            goto warn_undef;
+      case RX_BUFF_IDX_POSTMATCH:       /* $' */
 	    if (rx->offs[0].end != -1) {
 			i = rx->sublen - rx->offs[0].end;
 			if (i > 0) {
@@ -6811,6 +6837,12 @@ Perl_reg_numbered_buff_length(pTHX_ REGEXP * const r, const SV * const sv,
 			}
 	    }
         return 0;
+
+      case RX_BUFF_IDX_CARET_FULLMATCH: /* ${^MATCH} */
+         if (!(rx->extflags & RXf_PMf_KEEPCOPY))
+            goto warn_undef;
+        /*FALLTHROUGH*/
+
       /* $& / ${^MATCH}, $1, $2, ... */
       default:
 	    if (paren <= (I32)rx->nparens &&
@@ -6820,6 +6852,7 @@ Perl_reg_numbered_buff_length(pTHX_ REGEXP * const r, const SV * const sv,
             i = t1 - s1;
             goto getlen;
         } else {
+          warn_undef:
             if (ckWARN(WARN_UNINITIALIZED))
                 report_uninit((const SV *)sv);
             return 0;
@@ -6827,7 +6860,7 @@ Perl_reg_numbered_buff_length(pTHX_ REGEXP * const r, const SV * const sv,
     }
   getlen:
     if (i > 0 && RXp_MATCH_UTF8(rx)) {
-        const char * const s = rx->subbeg + s1;
+        const char * const s = rx->subbeg - rx->suboffset + s1;
         const U8 *ep;
         STRLEN el;
 
@@ -6996,32 +7029,8 @@ S_reg_scan_name(pTHX_ RExC_state_t *pRExC_state, U32 flags)
  * Some of the methods should always be private to the implementation, and some
  * should eventually be made public */
 
-#define INVLIST_LEN_OFFSET 0	/* Number of elements in the inversion list */
-#define INVLIST_ITER_OFFSET 1	/* Current iteration position */
+/* The header definitions are in F<inline_invlist.c> */
 
-/* This is a combination of a version and data structure type, so that one
- * being passed in can be validated to be an inversion list of the correct
- * vintage.  When the structure of the header is changed, a new random number
- * in the range 2**31-1 should be generated and the new() method changed to
- * insert that at this location.  Then, if an auxiliary program doesn't change
- * correspondingly, it will be discovered immediately */
-#define INVLIST_VERSION_ID_OFFSET 2
-#define INVLIST_VERSION_ID 1064334010
-
-/* For safety, when adding new elements, remember to #undef them at the end of
- * the inversion list code section */
-
-#define INVLIST_ZERO_OFFSET 3	/* 0 or 1; must be last element in header */
-/* The UV at position ZERO contains either 0 or 1.  If 0, the inversion list
- * contains the code point U+00000, and begins here.  If 1, the inversion list
- * doesn't contain U+0000, and it begins at the next UV in the array.
- * Inverting an inversion list consists of adding or removing the 0 at the
- * beginning of it.  By reserving a space for that 0, inversion can be made
- * very fast */
-
-#define HEADER_LENGTH (INVLIST_ZERO_OFFSET + 1)
-
-/* Internally things are UVs */
 #define TO_INTERNAL_SIZE(x) ((x + HEADER_LENGTH) * sizeof(UV))
 #define FROM_INTERNAL_SIZE(x) ((x / sizeof(UV)) - HEADER_LENGTH)
 
@@ -7043,7 +7052,7 @@ S__invlist_array_init(pTHX_ SV* const invlist, const bool will_have_0)
     PERL_ARGS_ASSERT__INVLIST_ARRAY_INIT;
 
     /* Must be empty */
-    assert(! *get_invlist_len_addr(invlist));
+    assert(! *_get_invlist_len_addr(invlist));
 
     /* 1^1 = 0; 1^0 = 1 */
     *zero = 1 ^ will_have_0;
@@ -7061,7 +7070,7 @@ S_invlist_array(pTHX_ SV* const invlist)
 
     /* Must not be empty.  If these fail, you probably didn't check for <len>
      * being non-zero before trying to get the array */
-    assert(*get_invlist_len_addr(invlist));
+    assert(*_get_invlist_len_addr(invlist));
     assert(*get_invlist_zero_addr(invlist) == 0
 	   || *get_invlist_zero_addr(invlist) == 1);
 
@@ -7072,28 +7081,6 @@ S_invlist_array(pTHX_ SV* const invlist)
 		   + *get_invlist_zero_addr(invlist));
 }
 
-PERL_STATIC_INLINE UV*
-S_get_invlist_len_addr(pTHX_ SV* invlist)
-{
-    /* Return the address of the UV that contains the current number
-     * of used elements in the inversion list */
-
-    PERL_ARGS_ASSERT_GET_INVLIST_LEN_ADDR;
-
-    return (UV *) (SvPVX(invlist) + (INVLIST_LEN_OFFSET * sizeof (UV)));
-}
-
-PERL_STATIC_INLINE UV
-S_invlist_len(pTHX_ SV* const invlist)
-{
-    /* Returns the current number of elements stored in the inversion list's
-     * array */
-
-    PERL_ARGS_ASSERT_INVLIST_LEN;
-
-    return *get_invlist_len_addr(invlist);
-}
-
 PERL_STATIC_INLINE void
 S_invlist_set_len(pTHX_ SV* const invlist, const UV len)
 {
@@ -7101,7 +7088,7 @@ S_invlist_set_len(pTHX_ SV* const invlist, const UV len)
 
     PERL_ARGS_ASSERT_INVLIST_SET_LEN;
 
-    *get_invlist_len_addr(invlist) = len;
+    *_get_invlist_len_addr(invlist) = len;
 
     assert(len <= SvLEN(invlist));
 
@@ -7119,6 +7106,39 @@ S_invlist_set_len(pTHX_ SV* const invlist, const UV len)
      * seems worth not bothering to make this the precise amount.
      *
      * Note that when inverting, SvCUR shouldn't change */
+}
+
+PERL_STATIC_INLINE IV*
+S_get_invlist_previous_index_addr(pTHX_ SV* invlist)
+{
+    /* Return the address of the UV that is reserved to hold the cached index
+     * */
+
+    PERL_ARGS_ASSERT_GET_INVLIST_PREVIOUS_INDEX_ADDR;
+
+    return (IV *) (SvPVX(invlist) + (INVLIST_PREVIOUS_INDEX_OFFSET * sizeof (UV)));
+}
+
+PERL_STATIC_INLINE IV
+S_invlist_previous_index(pTHX_ SV* const invlist)
+{
+    /* Returns cached index of previous search */
+
+    PERL_ARGS_ASSERT_INVLIST_PREVIOUS_INDEX;
+
+    return *get_invlist_previous_index_addr(invlist);
+}
+
+PERL_STATIC_INLINE void
+S_invlist_set_previous_index(pTHX_ SV* const invlist, const IV index)
+{
+    /* Caches <index> for later retrieval */
+
+    PERL_ARGS_ASSERT_INVLIST_SET_PREVIOUS_INDEX;
+
+    assert(index == 0 || index < (int) _invlist_len(invlist));
+
+    *get_invlist_previous_index_addr(invlist) = index;
 }
 
 PERL_STATIC_INLINE UV
@@ -7171,8 +7191,9 @@ Perl__new_invlist(pTHX_ IV initial_size)
      * properly */
     *get_invlist_zero_addr(new_list) = UV_MAX;
 
+    *get_invlist_previous_index_addr(new_list) = 0;
     *get_invlist_version_id_addr(new_list) = INVLIST_VERSION_ID;
-#if HEADER_LENGTH != 4
+#if HEADER_LENGTH != 5
 #   error Need to regenerate VERSION_ID by running perl -E 'say int(rand 2**31-1)', and then changing the #if to the new length
 #endif
 
@@ -7195,7 +7216,7 @@ S__new_invlist_C_array(pTHX_ UV* list)
     SvPV_set(invlist, (char *) list);
     SvLEN_set(invlist, 0);  /* Means we own the contents, and the system
 			       shouldn't touch it */
-    SvCUR_set(invlist, TO_INTERNAL_SIZE(invlist_len(invlist)));
+    SvCUR_set(invlist, TO_INTERNAL_SIZE(_invlist_len(invlist)));
 
     if (*get_invlist_version_id_addr(invlist) != INVLIST_VERSION_ID) {
         Perl_croak(aTHX_ "panic: Incorrect version for previously generated inversion list");
@@ -7225,11 +7246,6 @@ S_invlist_trim(pTHX_ SV* const invlist)
     SvPV_shrink_to_cur((SV *) invlist);
 }
 
-/* An element is in an inversion list iff its index is even numbered: 0, 2, 4,
- * etc */
-#define ELEMENT_RANGE_MATCHES_INVLIST(i) (! ((i) & 1))
-#define PREV_RANGE_MATCHES_INVLIST(i) (! ELEMENT_RANGE_MATCHES_INVLIST(i))
-
 #define _invlist_union_complement_2nd(a, b, output) _invlist_union_maybe_complement_2nd(a, b, TRUE, output)
 
 STATIC void
@@ -7241,7 +7257,7 @@ S__append_range_to_invlist(pTHX_ SV* const invlist, const UV start, const UV end
 
     UV* array;
     UV max = invlist_max(invlist);
-    UV len = invlist_len(invlist);
+    UV len = _invlist_len(invlist);
 
     PERL_ARGS_ASSERT__APPEND_RANGE_TO_INVLIST;
 
@@ -7322,23 +7338,68 @@ Perl__invlist_search(pTHX_ SV* const invlist, const UV cp)
      * contains <cp> */
 
     IV low = 0;
-    IV high = invlist_len(invlist);
-    const UV * const array = invlist_array(invlist);
+    IV mid;
+    IV high = _invlist_len(invlist);
+    const IV highest_element = high - 1;
+    const UV* array;
 
     PERL_ARGS_ASSERT__INVLIST_SEARCH;
 
-    /* If list is empty or the code point is before the first element, return
-     * failure. */
-    if (high == 0 || cp < array[0]) {
+    /* If list is empty, return failure. */
+    if (high == 0) {
 	return -1;
+    }
+
+    /* If the code point is before the first element, return failure.  (We
+     * can't combine this with the test above, because we can't get the array
+     * unless we know the list is non-empty) */
+    array = invlist_array(invlist);
+
+    mid = invlist_previous_index(invlist);
+    assert(mid >=0 && mid <= highest_element);
+
+    /* <mid> contains the cache of the result of the previous call to this
+     * function (0 the first time).  See if this call is for the same result,
+     * or if it is for mid-1.  This is under the theory that calls to this
+     * function will often be for related code points that are near each other.
+     * And benchmarks show that caching gives better results.  We also test
+     * here if the code point is within the bounds of the list.  These tests
+     * replace others that would have had to be made anyway to make sure that
+     * the array bounds were not exceeded, and give us extra information at the
+     * same time */
+    if (cp >= array[mid]) {
+        if (cp >= array[highest_element]) {
+            return highest_element;
+        }
+
+        /* Here, array[mid] <= cp < array[highest_element].  This means that
+         * the final element is not the answer, so can exclude it; it also
+         * means that <mid> is not the final element, so can refer to 'mid + 1'
+         * safely */
+        if (cp < array[mid + 1]) {
+            return mid;
+        }
+        high--;
+        low = mid + 1;
+    }
+    else { /* cp < aray[mid] */
+        if (cp < array[0]) { /* Fail if outside the array */
+            return -1;
+        }
+        high = mid;
+        if (cp >= array[mid - 1]) {
+            goto found_entry;
+        }
     }
 
     /* Binary search.  What we are looking for is <i> such that
      *	array[i] <= cp < array[i+1]
-     * The loop below converges on the i+1. */
+     * The loop below converges on the i+1.  Note that there may not be an
+     * (i+1)th element in the array, and things work nonetheless */
     while (low < high) {
-	IV mid = (low + high) / 2;
-	if (array[mid] <= cp) {
+	mid = (low + high) / 2;
+        assert(mid <= highest_element);
+	if (array[mid] <= cp) { /* cp >= array[mid] */
 	    low = mid + 1;
 
 	    /* We could do this extra test to exit the loop early.
@@ -7352,7 +7413,10 @@ Perl__invlist_search(pTHX_ SV* const invlist, const UV cp)
 	}
     }
 
-    return high - 1;
+  found_entry:
+    high--;
+    invlist_set_previous_index(invlist, high);
+    return high;
 }
 
 void
@@ -7366,7 +7430,7 @@ Perl__invlist_populate_swatch(pTHX_ SV* const invlist, const UV start, const UV 
      * that <swatch> is all 0's on input */
 
     UV current = start;
-    const IV len = invlist_len(invlist);
+    const IV len = _invlist_len(invlist);
     IV i;
     const UV * array;
 
@@ -7398,7 +7462,15 @@ Perl__invlist_populate_swatch(pTHX_ SV* const invlist, const UV start, const UV 
             current = array[i];
 	    if (current >= end) {   /* Finished if beyond the end of what we
 				       are populating */
-                return;
+                if (LIKELY(end < UV_MAX)) {
+                    return;
+                }
+
+                /* We get here when the upper bound is the maximum
+                 * representable on the machine, and we are looking for just
+                 * that code point.  Have to special case it */
+                i = len;
+                goto join_end_of_list;
             }
         }
         assert(current >= start);
@@ -7414,6 +7486,8 @@ Perl__invlist_populate_swatch(pTHX_ SV* const invlist, const UV start, const UV 
             const STRLEN offset = (STRLEN)(current - start);
             swatch[offset >> 3] |= 1 << (offset & 7);
         }
+
+    join_end_of_list:
 
 	/* Quit if at the end of the list */
         if (i >= len) {
@@ -7486,7 +7560,7 @@ Perl__invlist_union_maybe_complement_2nd(pTHX_ SV* const a, SV* const b, bool co
     assert(a != b);
 
     /* If either one is empty, the union is the other one */
-    if (a == NULL || ((len_a = invlist_len(a)) == 0)) {
+    if (a == NULL || ((len_a = _invlist_len(a)) == 0)) {
 	if (*output == a) {
             if (a != NULL) {
                 SvREFCNT_dec(a);
@@ -7500,7 +7574,7 @@ Perl__invlist_union_maybe_complement_2nd(pTHX_ SV* const a, SV* const b, bool co
 	} /* else *output already = b; */
 	return;
     }
-    else if ((len_b = invlist_len(b)) == 0) {
+    else if ((len_b = _invlist_len(b)) == 0) {
 	if (*output == b) {
 	    SvREFCNT_dec(b);
 	}
@@ -7641,7 +7715,7 @@ Perl__invlist_union_maybe_complement_2nd(pTHX_ SV* const a, SV* const b, bool co
 
     /* Set result to final length, which can change the pointer to array_u, so
      * re-find it */
-    if (len_u != invlist_len(u)) {
+    if (len_u != _invlist_len(u)) {
 	invlist_set_len(u, len_u);
 	invlist_trim(u);
 	array_u = invlist_array(u);
@@ -7720,8 +7794,8 @@ Perl__invlist_intersection_maybe_complement_2nd(pTHX_ SV* const a, SV* const b, 
     assert(a != b);
 
     /* Special case if either one is empty */
-    len_a = invlist_len(a);
-    if ((len_a == 0) || ((len_b = invlist_len(b)) == 0)) {
+    len_a = _invlist_len(a);
+    if ((len_a == 0) || ((len_b = _invlist_len(b)) == 0)) {
 
         if (len_a != 0 && complement_b) {
 
@@ -7867,7 +7941,7 @@ Perl__invlist_intersection_maybe_complement_2nd(pTHX_ SV* const a, SV* const b, 
 
     /* Set result to final length, which can change the pointer to array_r, so
      * re-find it */
-    if (len_r != invlist_len(r)) {
+    if (len_r != _invlist_len(r)) {
 	invlist_set_len(r, len_r);
 	invlist_trim(r);
 	array_r = invlist_array(r);
@@ -7915,13 +7989,13 @@ Perl__add_range_to_invlist(pTHX_ SV* invlist, const UV start, const UV end)
 	len = 0;
     }
     else {
-	len = invlist_len(invlist);
+	len = _invlist_len(invlist);
     }
 
     /* If comes after the final entry, can just append it to the end */
     if (len == 0
 	|| start >= invlist_array(invlist)
-				    [invlist_len(invlist) - 1])
+				    [_invlist_len(invlist) - 1])
     {
 	_append_range_to_invlist(invlist, start, end);
 	return invlist;
@@ -7942,18 +8016,6 @@ Perl__add_range_to_invlist(pTHX_ SV* invlist, const UV start, const UV end)
 
 #endif
 
-PERL_STATIC_INLINE bool
-S__invlist_contains_cp(pTHX_ SV* const invlist, const UV cp)
-{
-    /* Does <invlist> contain code point <cp> as part of the set? */
-
-    IV index = _invlist_search(invlist, cp);
-
-    PERL_ARGS_ASSERT__INVLIST_CONTAINS_CP;
-
-    return index >= 0 && ELEMENT_RANGE_MATCHES_INVLIST(index);
-}
-
 PERL_STATIC_INLINE SV*
 S_add_cp_to_invlist(pTHX_ SV* invlist, const UV cp) {
     return _add_range_to_invlist(invlist, cp, cp);
@@ -7967,7 +8029,7 @@ Perl__invlist_invert(pTHX_ SV* const invlist)
      * have a zero; removes it otherwise.  As described above, the data
      * structure is set up so that this is very efficient */
 
-    UV* len_pos = get_invlist_len_addr(invlist);
+    UV* len_pos = _get_invlist_len_addr(invlist);
 
     PERL_ARGS_ASSERT__INVLIST_INVERT;
 
@@ -8004,7 +8066,7 @@ Perl__invlist_invert_prop(pTHX_ SV* const invlist)
 
     _invlist_invert(invlist);
 
-    len = invlist_len(invlist);
+    len = _invlist_len(invlist);
 
     if (len != 0) { /* If empty do nothing */
 	array = invlist_array(invlist);
@@ -8036,7 +8098,7 @@ S_invlist_clone(pTHX_ SV* const invlist)
 
     /* Need to allocate extra space to accommodate Perl's addition of a
      * trailing NUL to SvPV's, since it thinks they are always strings */
-    SV* new_invlist = _new_invlist(invlist_len(invlist) + 1);
+    SV* new_invlist = _new_invlist(_invlist_len(invlist) + 1);
     STRLEN length = SvCUR(invlist);
 
     PERL_ARGS_ASSERT_INVLIST_CLONE;
@@ -8087,7 +8149,7 @@ S_invlist_iternext(pTHX_ SV* invlist, UV* start, UV* end)
      * will start over at the beginning of the list */
 
     UV* pos = get_invlist_iter_addr(invlist);
-    UV len = invlist_len(invlist);
+    UV len = _invlist_len(invlist);
     UV *array;
 
     PERL_ARGS_ASSERT_INVLIST_ITERNEXT;
@@ -8119,7 +8181,7 @@ S_invlist_highest(pTHX_ SV* const invlist)
      * 0, or if the list is empty.  If this distinction matters to you, check
      * for emptiness before calling this function */
 
-    UV len = invlist_len(invlist);
+    UV len = _invlist_len(invlist);
     UV *array;
 
     PERL_ARGS_ASSERT_INVLIST_HIGHEST;
@@ -8206,8 +8268,8 @@ S__invlistEQ(pTHX_ SV* const a, SV* const b, bool complement_b)
 
     UV* array_a = invlist_array(a);
     UV* array_b = invlist_array(b);
-    UV len_a = invlist_len(a);
-    UV len_b = invlist_len(b);
+    UV len_a = _invlist_len(a);
+    UV len_b = _invlist_len(b);
 
     UV i = 0;		    /* current index into the arrays */
     bool retval = TRUE;     /* Assume are identical until proven otherwise */
@@ -10439,7 +10501,7 @@ tryagain:
 	    STRLEN foldlen;
             U8 node_type;
             bool next_is_quantifier;
-            char * oldp;
+            char * oldp = NULL;
 
 	    ender = 0;
             node_type = compute_EXACTish(pRExC_state);
@@ -11511,6 +11573,10 @@ parseit:
 	    case 'P':
 		{
 		char *e;
+
+                /* This routine will handle any undefined properties */
+                U8 swash_init_flags = _CORE_SWASH_INIT_RETURN_IF_UNDEF;
+
 		if (RExC_parse >= RExC_end)
 		    vFAIL2("Empty \\%c{}", (U8)value);
 		if (*RExC_parse == '{') {
@@ -11565,15 +11631,10 @@ parseit:
                     swash = _core_swash_init("utf8", name, &PL_sv_undef,
                                              1, /* binary */
                                              0, /* not tr/// */
-                                             TRUE, /* this routine will handle
-                                                      undefined properties */
-                                             NULL, FALSE /* No inversion list */
+                                             NULL, /* No inversion list */
+                                             &swash_init_flags
                                             );
-                    if (   ! swash
-                        || ! SvROK(swash)
-                        || ! SvTYPE(SvRV(swash)) == SVt_PVHV
-                        || ! (invlist = _get_swash_invlist(swash)))
-		    {
+                    if (! swash || ! (invlist = _get_swash_invlist(swash))) {
                         if (swash) {
                             SvREFCNT_dec(swash);
                             swash = NULL;
@@ -11602,7 +11663,8 @@ parseit:
                          * the swash is from a user-defined property, then this
                          * whole character class should be regarded as such */
                         has_user_defined_property =
-                                                _is_swash_user_defined(swash);
+                                    (swash_init_flags
+                                     & _CORE_SWASH_INIT_USER_DEFINED_PROPERTY);
 
                         /* Invert if asking for the complement */
                         if (value == 'P') {
@@ -12280,7 +12342,7 @@ parseit:
                  * rules hard-coded into Perl.  (This case happens legitimately
                  * during compilation of Perl itself before the Unicode tables
                  * are generated) */
-                if (invlist_len(PL_utf8_foldable) == 0) {
+                if (_invlist_len(PL_utf8_foldable) == 0) {
                     PL_utf8_foldclosures = newHV();
                 }
                 else {
@@ -12290,9 +12352,8 @@ parseit:
                         U8 dummy[UTF8_MAXBYTES+1];
                         STRLEN dummy_len;
 
-                        /* This particular string is above \xff in both UTF-8
-                         * and UTFEBCDIC */
-                        to_utf8_fold((U8*) "\xC8\x80", dummy, &dummy_len);
+                        /* This string is just a short named one above \xff */
+                        to_utf8_fold((U8*) HYPHEN_UTF8, dummy, &dummy_len);
                         assert(PL_utf8_tofold); /* Verify that worked */
                     }
                     PL_utf8_foldclosures =
@@ -12842,7 +12903,7 @@ parseit:
 	}
 
 	/* If have completely emptied it, remove it completely */
-	if (invlist_len(cp_list) == 0) {
+	if (_invlist_len(cp_list) == 0) {
 	    SvREFCNT_dec(cp_list);
 	    cp_list = NULL;
 	}
@@ -14402,6 +14463,8 @@ Perl_save_re_context(pTHX)
 
     PL_reg_oldsaved = NULL;
     PL_reg_oldsavedlen = 0;
+    PL_reg_oldsavedoffset = 0;
+    PL_reg_oldsavedcoffset = 0;
     PL_reg_maxiter = 0;
     PL_reg_leftiter = 0;
     PL_reg_poscache = NULL;
