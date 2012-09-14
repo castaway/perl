@@ -1764,64 +1764,16 @@ PERL_CALLCONV bool	Perl_is_uni_xdigit_lc(pTHX_ UV c)
 			__attribute__warn_unused_result__
 			__attribute__pure__;
 
-PERL_CALLCONV bool	Perl_is_utf8_X_L(pTHX_ const U8 *p)
-			__attribute__warn_unused_result__
-			__attribute__nonnull__(pTHX_1);
-#define PERL_ARGS_ASSERT_IS_UTF8_X_L	\
-	assert(p)
-
-PERL_CALLCONV bool	Perl_is_utf8_X_LVT(pTHX_ const U8 *p)
-			__attribute__warn_unused_result__
-			__attribute__nonnull__(pTHX_1);
-#define PERL_ARGS_ASSERT_IS_UTF8_X_LVT	\
-	assert(p)
-
-PERL_CALLCONV bool	Perl_is_utf8_X_LV_LVT_V(pTHX_ const U8 *p)
-			__attribute__warn_unused_result__
-			__attribute__nonnull__(pTHX_1);
-#define PERL_ARGS_ASSERT_IS_UTF8_X_LV_LVT_V	\
-	assert(p)
-
-PERL_CALLCONV bool	Perl_is_utf8_X_RI(pTHX_ const U8 *p)
-			__attribute__warn_unused_result__
-			__attribute__nonnull__(pTHX_1);
-#define PERL_ARGS_ASSERT_IS_UTF8_X_RI	\
-	assert(p)
-
-PERL_CALLCONV bool	Perl_is_utf8_X_T(pTHX_ const U8 *p)
-			__attribute__warn_unused_result__
-			__attribute__nonnull__(pTHX_1);
-#define PERL_ARGS_ASSERT_IS_UTF8_X_T	\
-	assert(p)
-
-PERL_CALLCONV bool	Perl_is_utf8_X_V(pTHX_ const U8 *p)
-			__attribute__warn_unused_result__
-			__attribute__nonnull__(pTHX_1);
-#define PERL_ARGS_ASSERT_IS_UTF8_X_V	\
-	assert(p)
-
 PERL_CALLCONV bool	Perl_is_utf8_X_extend(pTHX_ const U8 *p)
 			__attribute__warn_unused_result__
 			__attribute__nonnull__(pTHX_1);
 #define PERL_ARGS_ASSERT_IS_UTF8_X_EXTEND	\
 	assert(p)
 
-PERL_CALLCONV bool	Perl_is_utf8_X_prepend(pTHX_ const U8 *p)
-			__attribute__warn_unused_result__
-			__attribute__nonnull__(pTHX_1);
-#define PERL_ARGS_ASSERT_IS_UTF8_X_PREPEND	\
-	assert(p)
-
 PERL_CALLCONV bool	Perl_is_utf8_X_regular_begin(pTHX_ const U8 *p)
 			__attribute__warn_unused_result__
 			__attribute__nonnull__(pTHX_1);
 #define PERL_ARGS_ASSERT_IS_UTF8_X_REGULAR_BEGIN	\
-	assert(p)
-
-PERL_CALLCONV bool	Perl_is_utf8_X_special_begin(pTHX_ const U8 *p)
-			__attribute__warn_unused_result__
-			__attribute__nonnull__(pTHX_1);
-#define PERL_ARGS_ASSERT_IS_UTF8_X_SPECIAL_BEGIN	\
 	assert(p)
 
 PERL_CALLCONV bool	Perl_is_utf8_alnum(pTHX_ const U8 *p)
@@ -6800,6 +6752,12 @@ STATIC char*	S_find_byclass(pTHX_ regexp * prog, const regnode *c, char *s, cons
 #define PERL_ARGS_ASSERT_FIND_BYCLASS	\
 	assert(prog); assert(c); assert(s); assert(strend)
 
+PERL_STATIC_INLINE bool	S_is_utf8_X_LVT(pTHX_ const U8 *p)
+			__attribute__warn_unused_result__
+			__attribute__nonnull__(pTHX_1);
+#define PERL_ARGS_ASSERT_IS_UTF8_X_LVT	\
+	assert(p)
+
 STATIC I32	S_reg_check_named_buff_matched(pTHX_ const regexp *rex, const regnode *scan)
 			__attribute__warn_unused_result__
 			__attribute__nonnull__(pTHX_1)
@@ -6838,26 +6796,28 @@ STATIC bool	S_reginclass(pTHX_ const regexp * const prog, const regnode * const 
 #define PERL_ARGS_ASSERT_REGINCLASS	\
 	assert(n); assert(p)
 
-STATIC I32	S_regmatch(pTHX_ regmatch_info *reginfo, regnode *prog)
+STATIC I32	S_regmatch(pTHX_ regmatch_info *reginfo, char *startpos, regnode *prog)
 			__attribute__warn_unused_result__
 			__attribute__nonnull__(pTHX_1)
-			__attribute__nonnull__(pTHX_2);
+			__attribute__nonnull__(pTHX_2)
+			__attribute__nonnull__(pTHX_3);
 #define PERL_ARGS_ASSERT_REGMATCH	\
-	assert(reginfo); assert(prog)
+	assert(reginfo); assert(startpos); assert(prog)
 
-STATIC I32	S_regrepeat(pTHX_ const regexp *prog, const regnode *p, I32 max, int depth)
+STATIC I32	S_regrepeat(pTHX_ const regexp *prog, char **startposp, const regnode *p, I32 max, int depth)
 			__attribute__warn_unused_result__
 			__attribute__nonnull__(pTHX_1)
-			__attribute__nonnull__(pTHX_2);
+			__attribute__nonnull__(pTHX_2)
+			__attribute__nonnull__(pTHX_3);
 #define PERL_ARGS_ASSERT_REGREPEAT	\
-	assert(prog); assert(p)
+	assert(prog); assert(startposp); assert(p)
 
-STATIC I32	S_regtry(pTHX_ regmatch_info *reginfo, char **startpos)
+STATIC I32	S_regtry(pTHX_ regmatch_info *reginfo, char **startposp)
 			__attribute__warn_unused_result__
 			__attribute__nonnull__(pTHX_1)
 			__attribute__nonnull__(pTHX_2);
 #define PERL_ARGS_ASSERT_REGTRY	\
-	assert(reginfo); assert(startpos)
+	assert(reginfo); assert(startposp)
 
 STATIC void	S_to_byte_substr(pTHX_ regexp * prog)
 			__attribute__nonnull__(pTHX_1);
@@ -7303,12 +7263,6 @@ STATIC U8	S_to_lower_latin1(pTHX_ const U8 c, U8 *p, STRLEN *lenp)
 
 #endif
 #if defined(PERL_IN_UTF8_C) || defined(PERL_IN_PP_C)
-PERL_CALLCONV bool	Perl__is_utf8_quotemeta(pTHX_ const U8 *p)
-			__attribute__warn_unused_result__
-			__attribute__nonnull__(pTHX_1);
-#define PERL_ARGS_ASSERT__IS_UTF8_QUOTEMETA	\
-	assert(p)
-
 PERL_CALLCONV UV	Perl__to_upper_title_latin1(pTHX_ const U8 c, U8 *p, STRLEN *lenp, const char S_or_s)
 			__attribute__nonnull__(pTHX_2)
 			__attribute__nonnull__(pTHX_3);
