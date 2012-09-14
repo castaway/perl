@@ -1,6 +1,9 @@
 # hints/android.sh
 # Original version by jrobinson
 
+## No searching in /usr/local etc
+locincpth=''
+
 # No version of Linux supports setuid scripts.
 d_suidsafe='undef'
 

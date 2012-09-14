@@ -4569,9 +4569,10 @@ case "$gccversion" in
 esac
 
 : What should the include directory be ?
+: Use sysroot if set, so findhdr looks in the right place.
 echo " "
 $echo $n "Hmm...  $c"
-dflt='/usr/include'
+dflt="$sysroot/usr/include"
 incpath=''
 mips_type=''
 if $test -f /bin/mips && /bin/mips; then
@@ -4601,7 +4602,7 @@ chmod +x mips
 $eunicefix mips
 case "$usrinc" in
 '') ;;
-*) dflt="$usrinc";;
+*) dflt="$sysroot$usrinc";;
 esac
 case "$xxx_prompt" in
 y)	fn=d/
