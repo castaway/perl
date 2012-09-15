@@ -77,6 +77,18 @@ byteorder='1234'
 ## test for this uses byteorder value
 d_u32align='undef'
 
+## libraries when installed will be here:
+archlib='/data/data/com.googlecode.perlforandroid/files/perl/5.17.4/arm-eabi-linux'
+archlibexp='/data/data/com.googlecode.perlforandroid/files/perl/5.17.4/arm-eabi-linux'
+sitearch='/data/data/com.googlecode.perlforandroid/files/perl/site_perl/5.17.4/arm-eabi-linux'
+sitearchexp='/data/data/com.googlecode.perlforandroid/files/perl/site_perl/5.17.4/arm-eabi-linux'
+sitelib='/sdcard/com.android.perl/extras/perl/site_perl/5.17.4'
+sitelib_stem='/sdcard/com.android.perl/extras/perl/site_perl'
+sitelibexp='/sdcard/com.android.perl/extras/perl/site_perl/5.17.4'
+siteprefix='/sdcard/com.android.perl/extras/perl'
+siteprefixexp='/sdcard/com.android.perl/extras/perl'
+
+
 
 # Can't run the tests for gconvert and pals either:
 # d_Gconvert - 
