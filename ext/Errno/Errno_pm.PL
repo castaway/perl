@@ -139,10 +139,14 @@ sub get_files {
 	      $Config{gccversion} !~ /intel/i
 	      # might be using, say, Intel's icc
 	     ) {
+    # General cross-compiling use, cross-compiler in $SYSROOT
+    my $sysroot = `$Config{cc} -print-sysroot` || '';
+    chomp($sysroot);
 	# Some Linuxes have weird errno.hs which generate
 	# no #file or #line directives
-	my $linux_errno_h = -e '/usr/include/errno.h' ?
-	    '/usr/include/errno.h' : '/usr/local/include/errno.h';
+    my $linux_errno_h = -e "$sysroot/usr/include/errno.h" 
+         ? "$sysroot/usr/include/errno.h" 
+         : "$sysroot/usr/local/include/errno.h";
 	$file{$linux_errno_h} = 1;
     } elsif ($^O eq 'beos' || $^O eq 'haiku') {
 	# hidden in a special place
