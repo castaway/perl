@@ -39,8 +39,15 @@ my $null = devnull();
 unless (defined $tag_to_compare) {
     # Thanks to David Golden for this suggestion.
 
-    $tag_to_compare = `git describe --abbrev=0`;
+    $tag_to_compare = `git describe --abbrev=0 2>$null`;
     chomp $tag_to_compare;
+}
+
+unless (length $tag_to_compare) {
+    die "$0: Git found, but no Git tags found\n"
+	unless $tap;
+    print "1..0 # SKIP: Git found, but no Git tags found\n";
+    exit 0;
 }
 
 my $tag_exists = `git --no-pager tag -l $tag_to_compare 2>$null`;

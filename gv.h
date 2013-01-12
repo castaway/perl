@@ -235,6 +235,9 @@ Return the CV from the GV.
 #define GV_NO_SVGMAGIC	0x800	/* Skip get-magic on an SV argument;
 				   used only by gv_fetchsv(_nomg) */
 
+/* Flags for gv_fetchmeth_pvn and gv_autoload_pvn*/
+#define GV_SUPER	0x1000	/* SUPER::method */
+
 /* Flags for gv_autoload_*/
 #define GV_AUTOLOAD_ISMETHOD 1	/* autoloading a method? */
 
@@ -261,6 +264,13 @@ Return the CV from the GV.
 #define gv_autoload4(stash, name, len, method) \
 	gv_autoload_pvn(stash, name, len, !!(method))
 #define newGVgen(pack)  newGVgen_flags(pack, 0)
+#define gv_method_changed(gv)		    \
+    (					     \
+    	assert_(isGV_with_GP(gv))	      \
+	GvREFCNT(gv) > 1		       \
+	    ? (void)++PL_sub_generation		\
+	    : mro_method_changed_in(GvSTASH(gv)) \
+    )
 
 #define gv_AVadd(gv) gv_add_by_type((gv), SVt_PVAV)
 #define gv_HVadd(gv) gv_add_by_type((gv), SVt_PVHV)

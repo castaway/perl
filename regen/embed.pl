@@ -85,8 +85,14 @@ my ($embed, $core, $ext, $api) = setup_embed();
 	}
 
 	if ($flags =~ /([si])/) {
-	    my $type = ($1 eq 's') ? "STATIC" : "PERL_STATIC_INLINE";
-	    warn "$func: i and s flags are mutually exclusive"
+	    my $type;
+	    if ($never_returns) {
+		$type = $1 eq 's' ? "PERL_STATIC_NO_RET" : "PERL_STATIC_INLINE_NO_RET";
+	    }
+	    else {
+		$type = $1 eq 's' ? "STATIC" : "PERL_STATIC_INLINE";
+	    }
+	    warn "$plain_func: i and s flags are mutually exclusive"
 					    if $flags =~ /s/ && $flags =~ /i/;
 	    $retval = "$type $splint_flags$retval";
 	    $func = "S_$plain_func";
@@ -268,7 +274,7 @@ sub embed_h {
 	unless ($flags =~ /[om]/) {
 	    my $args = scalar @args;
 	    if ($flags =~ /n/) {
-		if ($flags =~ /s/) {
+		if ($flags =~ /[si]/) {
 		    $ret = hide($func,"S_$func");
 		}
 		elsif ($flags =~ /p/) {
@@ -435,7 +441,13 @@ END
 my $sym;
 
 for $sym (@intrp) {
+    if ($sym eq 'sawampersand') {
+	print $em "#ifndef PL_sawampersand\n";
+    }
     print $em multon($sym,'I','vTHX->');
+    if ($sym eq 'sawampersand') {
+	print $em "#endif\n";
+    }
 }
 
 print $em <<'END';

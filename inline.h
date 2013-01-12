@@ -21,6 +21,15 @@ S_CvDEPTHp(const CV * const sv)
     return &((XPVCV*)SvANY(sv))->xcv_depth;
 }
 
+/* ----------------------------- regexp.h ----------------------------- */
+
+PERL_STATIC_INLINE struct regexp *
+S_ReANY(const REGEXP * const re)
+{
+    assert(isREGEXP(re));
+    return re->sv_u.svu_rx;
+}
+
 /* ------------------------------- sv.h ------------------------------- */
 
 PERL_STATIC_INLINE SV *
@@ -91,4 +100,25 @@ S_SvPADSTALE_off(SV *sv)
 {
     assert(SvFLAGS(sv) & SVs_PADMY);
     return SvFLAGS(sv) &= ~SVs_PADSTALE;
+}
+#ifdef PERL_CORE
+PERL_STATIC_INLINE STRLEN
+S_sv_or_pv_pos_u2b(pTHX_ SV *sv, const char *pv, STRLEN pos, STRLEN *lenp)
+{
+    if (SvGAMAGIC(sv)) {
+	U8 *hopped = utf8_hop((U8 *)pv, pos);
+	if (lenp) *lenp = (STRLEN)(utf8_hop(hopped, *lenp) - hopped);
+	return (STRLEN)(hopped - (U8 *)pv);
+    }
+    return sv_pos_u2b_flags(sv,pos,lenp,SV_CONST_RETURN);
+}
+#endif
+
+/* ------------------------------- handy.h ------------------------------- */
+
+/* saves machine code for a common noreturn idiom typically used in Newx*() */
+static void
+S_croak_memory_wrap(void)
+{
+    Perl_croak_nocontext("%s",PL_memory_wrap);
 }

@@ -170,11 +170,11 @@ static BOOL silent_invalid_parameter_handler = FALSE;
 static BOOL
 set_silent_invalid_parameter_handler(BOOL newvalue)
 {
-#  ifdef _DEBUG
     BOOL oldvalue = silent_invalid_parameter_handler;
+#  ifdef _DEBUG
     silent_invalid_parameter_handler = newvalue;
-    return oldvalue;
 #  endif
+    return oldvalue;
 }
 
 static void
@@ -381,10 +381,9 @@ get_emd_part(SV **prev_pathp, STRLEN *const len, char *trailing_path, ...)
     return NULL;
 }
 
-char *
+EXTERN_C char *
 win32_get_privlib(const char *pl, STRLEN *const len)
 {
-    dTHX;
     char *stdlib = "lib";
     char buffer[MAX_PATH+1];
     SV *sv = NULL;
@@ -439,7 +438,7 @@ win32_get_xlib(const char *pl, const char *xlib, const char *libname,
     return SvPVX(sv1);
 }
 
-char *
+EXTERN_C char *
 win32_get_sitelib(const char *pl, STRLEN *const len)
 {
     return win32_get_xlib(pl, "sitelib", "site", len);
@@ -449,7 +448,7 @@ win32_get_sitelib(const char *pl, STRLEN *const len)
 #  define PERL_VENDORLIB_NAME	"vendor"
 #endif
 
-char *
+EXTERN_C char *
 win32_get_vendorlib(const char *pl, STRLEN *const len)
 {
     return win32_get_xlib(pl, "vendorlib", PERL_VENDORLIB_NAME, len);
@@ -544,7 +543,6 @@ tokenize(const char *str, char **dest, char ***destv)
     char **retvstart = 0;
     int items = -1;
     if (str) {
-	dTHX;
 	int slen = strlen(str);
 	char *ret;
 	char **retv;
@@ -924,7 +922,6 @@ win32_readdir(DIR *dirp)
 	/* Now set up for the next call to readdir */
 	dirp->curr += len + 1;
 	if (dirp->curr >= dirp->end) {
-	    dTHX;
 	    BOOL res;
 	    char buffer[MAX_PATH*2];
 
@@ -1006,7 +1003,6 @@ win32_rewinddir(DIR *dirp)
 DllExport int
 win32_closedir(DIR *dirp)
 {
-    dTHX;
     if (dirp->handle != INVALID_HANDLE_VALUE)
 	FindClose(dirp->handle);
     Safefree(dirp->start);
@@ -1020,7 +1016,7 @@ win32_dirp_dup(DIR *const dirp, CLONE_PARAMS *const param)
 {
     dVAR;
     PerlInterpreter *const from = param->proto_perl;
-    PerlInterpreter *const to   = PERL_GET_THX;
+    PerlInterpreter *const to   = (PerlInterpreter *)PERL_GET_THX;
 
     long pos;
     DIR *dup;
@@ -1109,7 +1105,7 @@ setgid(gid_t agid)
     return (agid == ROOT_GID ? 0 : -1);
 }
 
-char *
+EXTERN_C char *
 getlogin(void)
 {
     dTHX;
@@ -1342,7 +1338,7 @@ get_hwnd_delay(pTHX, long child, DWORD tries)
     if (hwnd != INVALID_HANDLE_VALUE) return hwnd;
 
     {
-	int count = 0;
+	unsigned int count = 0;
 	/* No Sleep(1) if tries==0, just fail instead if we get this far. */
 	while (count++ < tries) {
 	    Sleep(1);
@@ -1666,14 +1662,17 @@ win32_longpath(char *path)
 static void
 out_of_memory(void)
 {
-    if (PL_curinterp) {
-        dTHX;
-        /* Can't use PerlIO to write as it allocates memory */
-        PerlLIO_write(PerlIO_fileno(Perl_error_log),
-                      PL_no_mem, strlen(PL_no_mem));
-        my_exit(1);
-    }
+    if (PL_curinterp)
+	croak_no_mem();
     exit(1);
+}
+
+void
+win32_croak_not_implemented(const char * fname)
+{
+    PERL_ARGS_ASSERT_WIN32_CROAK_NOT_IMPLEMENTED;
+
+    Perl_croak_nocontext("%s not implemented!\n", fname);
 }
 
 /* Converts a wide character (UTF-16) string to the Windows ANSI code page,
@@ -1686,7 +1685,7 @@ wstr_to_str(const wchar_t* wstr)
     size_t wlen = wcslen(wstr) + 1;
     int len = WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, wstr, wlen,
                                    NULL, 0, NULL, NULL);
-    char* str = malloc(len);
+    char* str = (char*)malloc(len);
     if (!str)
         out_of_memory();
     WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, wstr, wlen,
@@ -1719,7 +1718,7 @@ win32_ansipath(const WCHAR *widename)
     size_t widelen = wcslen(widename)+1;
     int len = WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, widename, widelen,
                                   NULL, 0, NULL, NULL);
-    name = win32_malloc(len);
+    name = (char*)win32_malloc(len);
     if (!name)
         out_of_memory();
 
@@ -1728,14 +1727,14 @@ win32_ansipath(const WCHAR *widename)
     if (use_default) {
         DWORD shortlen = GetShortPathNameW(widename, NULL, 0);
         if (shortlen) {
-            WCHAR *shortname = win32_malloc(shortlen*sizeof(WCHAR));
+            WCHAR *shortname = (WCHAR*)win32_malloc(shortlen*sizeof(WCHAR));
             if (!shortname)
                 out_of_memory();
             shortlen = GetShortPathNameW(widename, shortname, shortlen)+1;
 
             len = WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, shortname, shortlen,
                                       NULL, 0, NULL, NULL);
-            name = win32_realloc(name, len);
+            name = (char*)win32_realloc(name, len);
             if (!name)
                 out_of_memory();
             WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, shortname, shortlen,
@@ -1746,6 +1745,10 @@ win32_ansipath(const WCHAR *widename)
     return name;
 }
 
+/* the returned string must be freed with win32_freeenvironmentstrings which is
+ * implemented as a macro
+ * void win32_freeenvironmentstrings(void* block)
+ */
 DllExport char *
 win32_getenvironmentstrings(void)
 {
@@ -1773,12 +1776,6 @@ win32_getenvironmentstrings(void)
                         aenvstrings_len, NULL, NULL);
 
     return(lpStr);
-}
-
-DllExport void
-win32_freeenvironmentstrings(void* block)
-{
-    win32_free(block);
 }
 
 DllExport char *
@@ -1841,13 +1838,12 @@ win32_getenv(const char *name)
 DllExport int
 win32_putenv(const char *name)
 {
-    dTHX;
     char* curitem;
     char* val;
     int relval = -1;
 
     if (name) {
-        Newx(curitem,strlen(name)+1,char);
+        curitem = (char *) win32_malloc(strlen(name)+1);
         strcpy(curitem, name);
         val = strchr(curitem, '=');
         if (val) {
@@ -1871,7 +1867,7 @@ win32_putenv(const char *name)
             if (SetEnvironmentVariableA(curitem, *val ? val : NULL))
                 relval = 0;
         }
-        Safefree(curitem);
+        win32_free(curitem);
     }
     return relval;
 }
@@ -2217,13 +2213,33 @@ DllExport DWORD
 win32_msgwait(pTHX_ DWORD count, LPHANDLE handles, DWORD timeout, LPDWORD resultp)
 {
     /* We may need several goes at this - so compute when we stop */
-    DWORD ticks = 0;
+    FT_t ticks = {0};
+    unsigned __int64 endtime = timeout;
     if (timeout != INFINITE) {
-	ticks = GetTickCount();
-	timeout += ticks;
+	GetSystemTimeAsFileTime(&ticks.ft_val);
+	ticks.ft_i64 /= 10000;
+	endtime += ticks.ft_i64;
     }
-    while (1) {
-	DWORD result = MsgWaitForMultipleObjects(count,handles,FALSE,timeout-ticks, QS_POSTMESSAGE|QS_TIMER|QS_SENDMESSAGE);
+    /* This was a race condition. Do not let a non INFINITE timeout to
+     * MsgWaitForMultipleObjects roll under 0 creating a near
+     * infinity/~(UINT32)0 timeout which will appear as a deadlock to the
+     * user who did a CORE perl function with a non infinity timeout,
+     * sleep for example.  This is 64 to 32 truncation minefield.
+     *
+     * This scenario can only be created if the timespan from the return of
+     * MsgWaitForMultipleObjects to GetSystemTimeAsFileTime exceeds 1 ms. To
+     * generate the scenario, manual breakpoints in a C debugger are required,
+     * or a context switch occured in win32_async_check in PeekMessage, or random
+     * messages are delivered to the *thread* message queue of the Perl thread
+     * from another process (msctf.dll doing IPC among its instances, VS debugger
+     * causes msctf.dll to be loaded into Perl by kernel), see [perl #33096].
+     */
+    while (ticks.ft_i64 <= endtime) {
+	/* if timeout's type is lengthened, remember to split 64b timeout
+	 * into multiple non-infinity runs of MWFMO */
+	DWORD result = MsgWaitForMultipleObjects(count, handles, FALSE,
+						(DWORD)(endtime - ticks.ft_i64),
+						QS_POSTMESSAGE|QS_TIMER|QS_SENDMESSAGE);
 	if (resultp)
 	   *resultp = result;
 	if (result == WAIT_TIMEOUT) {
@@ -2233,8 +2249,9 @@ win32_msgwait(pTHX_ DWORD count, LPHANDLE handles, DWORD timeout, LPDWORD result
 	    return 0;
 	}
 	if (timeout != INFINITE) {
-	    ticks = GetTickCount();
-        }
+	    GetSystemTimeAsFileTime(&ticks.ft_val);
+	    ticks.ft_i64 /= 10000;
+	}
 	if (result == WAIT_OBJECT_0 + count) {
 	    /* Message has arrived - check it */
 	    (void)win32_async_check(aTHX);
@@ -2244,10 +2261,13 @@ win32_msgwait(pTHX_ DWORD count, LPHANDLE handles, DWORD timeout, LPDWORD result
 	   break;
 	}
     }
-    /* compute time left to wait */
-    ticks = timeout - ticks;
     /* If we are past the end say zero */
-    return (ticks > 0) ? ticks : 0;
+    if (!ticks.ft_i64 || ticks.ft_i64 > endtime)
+	return 0;
+    /* compute time left to wait */
+    ticks.ft_i64 = endtime - ticks.ft_i64;
+    /* if more ms than DWORD, then return max DWORD */
+    return ticks.ft_i64 <= UINT_MAX ? (DWORD)ticks.ft_i64 : UINT_MAX;
 }
 
 int
@@ -2402,7 +2422,11 @@ win32_sleep(unsigned int t)
 {
     dTHX;
     /* Win32 times are in ms so *1000 in and /1000 out */
-    return win32_msgwait(aTHX_ 0, NULL, t*1000, NULL)/1000;
+    if (t > UINT_MAX / 1000) {
+	Perl_ck_warner(aTHX_ packWARN(WARN_OVERFLOW),
+			"sleep(%lu) too large", t);
+    }
+    return win32_msgwait(aTHX_ 0, NULL, t * 1000, NULL) / 1000;
 }
 
 DllExport unsigned int
@@ -2562,10 +2586,11 @@ win32_strerror(int e)
 #endif
 
     if (e < 0 || e > sys_nerr) {
-        dTHX;
+        dTHXa(NULL);
 	if (e < 0)
 	    e = GetLastError();
 
+	aTHXa(PERL_GET_THX);
 	if (FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM
                          |FORMAT_MESSAGE_IGNORE_INSERTS, NULL, e, 0,
 			  w32_strerror_buffer, sizeof(w32_strerror_buffer),
@@ -2675,15 +2700,9 @@ win32_fopen(const char *filename, const char *mode)
     return f;
 }
 
-#ifndef USE_SOCKETS_AS_HANDLES
-#undef fdopen
-#define fdopen my_fdopen
-#endif
-
 DllExport FILE *
 win32_fdopen(int handle, const char *mode)
 {
-    dTHX;
     FILE *f;
     f = fdopen(handle, (char *) mode);
     /* avoid buffering headaches for child processes */
@@ -2705,7 +2724,11 @@ win32_freopen(const char *path, const char *mode, FILE *stream)
 DllExport int
 win32_fclose(FILE *pf)
 {
+#ifdef WIN32_NO_SOCKETS
+    return fclose(pf);
+#else
     return my_fclose(pf);	/* defined in win32sck.c */
+#endif
 }
 
 DllExport int
@@ -2814,7 +2837,6 @@ win32_rewind(FILE *pf)
 DllExport int
 win32_tmpfd(void)
 {
-    dTHX;
     char prefix[MAX_PATH+1];
     char filename[MAX_PATH+1];
     DWORD len = GetTempPath(MAX_PATH, prefix);
@@ -2831,6 +2853,7 @@ win32_tmpfd(void)
 	    if (fh != INVALID_HANDLE_VALUE) {
 		int fd = win32_open_osfhandle((intptr_t)fh, 0);
 		if (fd >= 0) {
+		    PERL_DEB(dTHX;)
 		    DEBUG_p(PerlIO_printf(Perl_debug_log,
 					  "Created tmpfile=%s\n",filename));
 		    return fd;
@@ -2876,8 +2899,7 @@ win32_pipe(int *pfd, unsigned int size, int mode)
 DllExport PerlIO*
 win32_popenlist(const char *mode, IV narg, SV **args)
 {
- dTHX;
- Perl_croak(aTHX_ "List form of pipe open not implemented");
+ Perl_croak_nocontext("List form of pipe open not implemented");
  return NULL;
 }
 
@@ -2893,7 +2915,6 @@ win32_popen(const char *command, const char *mode)
 #ifdef USE_RTL_POPEN
     return _popen(command, mode);
 #else
-    dTHX;
     int p[2];
     int parent, child;
     int stdfd, oldfd;
@@ -3224,7 +3245,11 @@ extern int my_close(int);	/* in win32sck.c */
 DllExport int
 win32_close(int fd)
 {
+#ifdef WIN32_NO_SOCKETS
+    return close(fd);
+#else
     return my_close(fd);
+#endif
 }
 
 DllExport int
@@ -3295,7 +3320,6 @@ win32_rmdir(const char *dir)
 DllExport int
 win32_chdir(const char *dir)
 {
-    dTHX;
     if (!dir) {
 	errno = ENOENT;
 	return -1;
@@ -3321,7 +3345,7 @@ win32_chmod(const char *path, int mode)
 static char *
 create_command_line(char *cname, STRLEN clen, const char * const *args)
 {
-    dTHX;
+    PERL_DEB(dTHX;)
     int index, argc;
     char *cmd, *ptr;
     const char *arg;
@@ -3600,7 +3624,6 @@ win32_clearenv(void)
 DllExport char*
 win32_get_childdir(void)
 {
-    dTHX;
     char* ptr;
     char szfilename[MAX_PATH+1];
 
@@ -3613,7 +3636,6 @@ win32_get_childdir(void)
 DllExport void
 win32_free_childdir(char* d)
 {
-    dTHX;
     Safefree(d);
 }
 
@@ -3635,7 +3657,7 @@ win32_spawnvp(int mode, const char *cmdname, const char *const *argv)
 #ifdef USE_RTL_SPAWNVP
     return spawnvp(mode, cmdname, (char * const *)argv);
 #else
-    dTHX;
+    dTHXa(NULL);
     int ret;
     void* env;
     char* dir;
@@ -3668,6 +3690,7 @@ win32_spawnvp(int mode, const char *cmdname, const char *const *argv)
 
     cmd = create_command_line(cname, clen, argv);
 
+    aTHXa(PERL_GET_THX);
     env = PerlEnv_get_childenv();
     dir = PerlEnv_get_childdir();
 
@@ -4070,7 +4093,7 @@ win32_dynaload(const char* filename)
 {
     dTHX;
     char buf[MAX_PATH+1];
-    char *first;
+    const char *first;
 
     /* LoadLibrary() doesn't recognize forward slashes correctly,
      * so turn 'em back. */
@@ -4123,10 +4146,12 @@ Perl_init_os_extras(void)
     char *file = __FILE__;
 
     /* Initialize Win32CORE if it has been statically linked. */
+#ifndef PERL_IS_MINIPERL
     void (*pfn_init)(pTHX);
     pfn_init = (void (*)(pTHX))GetProcAddress((HMODULE)w32_perldll_handle, "init_Win32CORE");
     if (pfn_init)
         pfn_init(aTHX);
+#endif
 
     newXS("Win32::SetChildShowWindow", w32_SetChildShowWindow, file);
 }
@@ -4214,13 +4239,17 @@ ansify_path(void)
 
     /* fetch Unicode version of PATH */
     len = 2000;
-    wide_path = win32_malloc(len*sizeof(WCHAR));
+    wide_path = (WCHAR*)win32_malloc(len*sizeof(WCHAR));
     while (wide_path) {
         size_t newlen = GetEnvironmentVariableW(L"PATH", wide_path, len);
+        if (newlen == 0) {
+            win32_free(wide_path);
+            return;
+        }
         if (newlen < len)
             break;
         len = newlen;
-        wide_path = win32_realloc(wide_path, len*sizeof(WCHAR));
+        wide_path = (WCHAR*)win32_realloc(wide_path, len*sizeof(WCHAR));
     }
     if (!wide_path)
         return;
@@ -4249,7 +4278,7 @@ ansify_path(void)
         ansi_len = strlen(ansi_dir);
         if (ansi_path) {
             size_t newlen = len + 1 + ansi_len;
-            ansi_path = win32_realloc(ansi_path, newlen+1);
+            ansi_path = (char*)win32_realloc(ansi_path, newlen+1);
             if (!ansi_path)
                 break;
             ansi_path[len] = ';';
@@ -4258,7 +4287,7 @@ ansify_path(void)
         }
         else {
             len = ansi_len;
-            ansi_path = win32_malloc(5+len+1);
+            ansi_path = (char*)win32_malloc(5+len+1);
             if (!ansi_path)
                 break;
             memcpy(ansi_path, "PATH=", 5);
@@ -4337,7 +4366,6 @@ Perl_win32_init(int *argcp, char ***argvp)
 void
 Perl_win32_term(void)
 {
-    dTHX;
     HINTS_REFCNT_TERM;
     OP_REFCNT_TERM;
     PERLIO_TERM;

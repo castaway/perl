@@ -920,7 +920,7 @@ S_measure_struct(pTHX_ tempsym_t* symptr)
  * returns char pointer to char after match, or NULL
  */
 STATIC const char *
-S_group_end(pTHX_ register const char *patptr, register const char *patend, char ender)
+S_group_end(pTHX_ const char *patptr, const char *patend, char ender)
 {
     PERL_ARGS_ASSERT_GROUP_END;
 
@@ -951,7 +951,7 @@ S_group_end(pTHX_ register const char *patptr, register const char *patend, char
  * Advances char pointer to 1st non-digit char and returns number
  */
 STATIC const char *
-S_get_num(pTHX_ register const char *patptr, I32 *lenptr )
+S_get_num(pTHX_ const char *patptr, I32 *lenptr )
 {
   I32 len = *patptr++ - '0';
 
@@ -2395,7 +2395,7 @@ The engine implementing pack() Perl function.
 */
 
 void
-Perl_packlist(pTHX_ SV *cat, const char *pat, const char *patend, register SV **beglist, SV **endlist )
+Perl_packlist(pTHX_ SV *cat, const char *pat, const char *patend, SV **beglist, SV **endlist )
 {
     dVAR;
     tempsym_t sym;
@@ -2558,18 +2558,7 @@ S_pack_rec(pTHX_ SV *cat, tempsym_t* symptr, SV **beglist, SV **endlist )
 		if (lookahead.howlen == e_number) count = lookahead.length;
 		else {
 		    if (items > 0) {
-			if (SvGAMAGIC(*beglist)) {
-			    /* Avoid reading the active data more than once
-			       by copying it to a temporary.  */
-			    STRLEN len;
-			    const char *const pv = SvPV_const(*beglist, len);
-			    SV *const temp
-				= newSVpvn_flags(pv, len,
-						 SVs_TEMP | SvUTF8(*beglist));
-			    *beglist = temp;
-			}
-			count = DO_UTF8(*beglist) ?
-			    sv_len_utf8(*beglist) : sv_len(*beglist);
+			count = sv_len_utf8(*beglist);
 		    }
 		    else count = 0;
 		    if (lookahead.code == 'Z') count++;

@@ -312,8 +312,7 @@ S_mro_get_linear_isa_dfs(pTHX_ HV *stash, U32 level)
 			sv_upgrade(val, SVt_PV);
 			SvPV_set(val, HEK_KEY(share_hek_hek(key)));
 			SvCUR_set(val, HEK_LEN(key));
-			SvREADONLY_on(val);
-			SvFAKE_on(val);
+			SvIsCOW_on(val);
 			SvPOK_on(val);
 			if (HEK_UTF8(key))
 			    SvUTF8_on(val);
@@ -545,6 +544,9 @@ Perl_mro_isa_changed_in(pTHX_ HV* stash)
     /* Changes to @ISA might turn overloading on */
     HvAMAGIC_on(stash);
 
+    /* DESTROY can be cached in SvSTASH. */
+    if (!SvOBJECT(stash)) SvSTASH(stash) = NULL;
+
     /* Iterate the isarev (classes that are our children),
        wiping out their linearization, method and isa caches
        and upating PL_isarev. */
@@ -576,6 +578,7 @@ Perl_mro_isa_changed_in(pTHX_ HV* stash)
                 revmeta->cache_gen++;
             if(revmeta->mro_nextmethod)
                 hv_clear(revmeta->mro_nextmethod);
+	    if (!SvOBJECT(revstash)) SvSTASH(revstash) = NULL;
 
 	    (void)
 	      hv_store(
@@ -952,9 +955,13 @@ S_mro_gather_and_rename(pTHX_ HV * const stashes, HV * const seen_stashes,
 	    while (items--) {
                 const U32 name_utf8 = SvUTF8(*svp);
 		STRLEN len;
-		const char *name = SvPVx_const(*svp++, len);
-		if(PL_stashcache)
+		const char *name = SvPVx_const(*svp, len);
+		if(PL_stashcache) {
+                    DEBUG_o(Perl_deb(aTHX_ "mro_gather_and_rename clearing PL_stashcache for '%"SVf"'\n",
+                                     *svp));
 		   (void)hv_delete(PL_stashcache, name, name_utf8 ? -(I32)len : (I32)len, G_DISCARD);
+                }
+                ++svp;
 	        hv_ename_delete(oldstash, name, len, name_utf8);
 
 		if (!fetched_isarev) {
@@ -1324,6 +1331,9 @@ Perl_mro_method_changed_in(pTHX_ HV *stash)
     /* Inc the package generation, since a local method changed */
     HvMROMETA(stash)->pkg_gen++;
 
+    /* DESTROY can be cached in SvSTASH. */
+    if (!SvOBJECT(stash)) SvSTASH(stash) = NULL;
+
     /* If stash is UNIVERSAL, or one of UNIVERSAL's parents,
        invalidate all method caches globally */
     if((stashname_len == 9 && strEQ(stashname, "UNIVERSAL"))
@@ -1347,6 +1357,7 @@ Perl_mro_method_changed_in(pTHX_ HV *stash)
             mrometa->cache_gen++;
             if(mrometa->mro_nextmethod)
                 hv_clear(mrometa->mro_nextmethod);
+            if (!SvOBJECT(revstash)) SvSTASH(revstash) = NULL;
         }
     }
 

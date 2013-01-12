@@ -5,7 +5,7 @@ use warnings;
 use vars qw($TODO $Level $using_open);
 require "test.pl";
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 # now export checkOptree, and those test.pl functions used by tests
 our @EXPORT = qw( checkOptree plan skip skip_all pass is like unlike
@@ -212,6 +212,10 @@ sampled from known-ok threaded and un-threaded bleadperl (5.9.1) builds.
 They're both required, and the correct one is selected for the platform
 being tested, and saved into the synthesized property B<wanted>.
 
+Individual sample lines may be suffixed with whitespace followed
+by (<|<=|==|>=|>)5.nnnn to select that line only for the listed perl
+version; the whitespace and conditional are stripped.
+
 =head2 bcopts => $bcopts || [ @bcopts ]
 
 When getRendering() runs, it passes bcopts into B::Concise::compile().
@@ -409,7 +413,14 @@ sub checkOptree {
 
     print "checkOptree args: ",mydumper($tc) if $tc->{dump};
     SKIP: {
-	skip("$tc->{skip} $tc->{name}", 1) if $tc->{skip};
+	if ($tc->{skip}) {
+	    skip("$tc->{skip} $tc->{name}",
+		    ($gOpts{selftest}
+			? 1
+			: 1 + @{$modes{$gOpts{testmode}}}
+			)
+	    );
+	}
 
 	return runSelftest($tc) if $gOpts{selftest};
 
@@ -628,14 +639,24 @@ sub mkCheckRex {
 
     $str =~ s/^\# //mg;	# ease cut-paste testcase authoring
 
-    if ($] < 5.009) {
-	# add 5.8 private flags, which bleadperl (5.9.1) doesn't have/use/render
-	# works because it adds no wildcards, which are butchered below..
-        $str =~ s|(mapstart l?K\*?)|$1/2|mg;
-        $str =~ s|(grepstart l?K\*?)|$1/2|msg;
-        $str =~ s|(mapwhile.*? l?K)|$1/1|msg;
-	$str =~ s|(grepwhile.*? l?K)|$1/1|msg;
-    }
+    # strip out conditional lines
+
+    $str =~ s{^(.*?)\s+(<|<=|==|>=|>)\s*(5\.\d+)\ *\n}
+     {
+	my ($line, $cmp, $version) = ($1,$2,$3);
+	my $repl = "";
+	if (  $cmp eq '<'  ? $] <  $version
+	    : $cmp eq '<=' ? $] <= $version
+	    : $cmp eq '==' ? $] == $version
+	    : $cmp eq '>=' ? $] >= $version
+	    : $cmp eq '>'  ? $] >  $version
+	    : die("bad comparision '$cmp' in string [$str]\n")
+	) {
+	    $repl = "$line\n";
+	}
+	$repl;
+     }gem;
+
     $tc->{wantstr} = $str;
 
     # make targ args wild
@@ -672,32 +693,12 @@ sub mkCheckRex {
 		)
 		(?:(:>,<,%,\\{)		# hints when open.pm is in force
 		   |(:>,<,%))		# (two variations)
-		(\ ->[0-9a-z]+)?
+		(\ ->(?:-|[0-9a-z]+))?
 		$
 	       ]
 	[$1 . ($2 && ':{') . $4]xegm;	# change to the hints without open.pm
     }
 
-    if ($] < 5.009) {
-	# 5.8.x doesn't provide the hints in the OP, which means that
-	# B::Concise doesn't show the symbolic hints. So strip all the
-	# symbolic hints from the golden results.
-	$str =~ s[(			# capture
-		   \(\?:next\|db\)state	# the regexp matching next/db state
-		   .*			# all sorts of things follow it
-		  v			# The opening v
-		  )
-		  :(?:\\[{*]		# \{ or \*
-		      |[^,\\])		# or other symbols on their own
-		    (?:,
-		     (?:\\[{*]
-			|[^,\\])
-		      )*		# maybe some more joined with commas
-		(\ ->[0-9a-z]+)?
-		$
-	       ]
-	[$1$2]xgm;			# change to the hints without flags
-    }
 
     # don't care about:
     $str =~ s/:-?\d+,-?\d+/:-?\\d+,-?\\d+/msg;		# FAKE line numbers

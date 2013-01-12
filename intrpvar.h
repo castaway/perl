@@ -162,7 +162,6 @@ PERLVARI(I, dumpindent,	U16,	4)	/* number of blanks per dump
 
 
 PERLVAR(I, utf8locale,	bool)		/* utf8 locale detected */
-PERLVARI(I, rehash_seed_set, bool, FALSE)	/* 582 hash initialized? */
 
 PERLVARA(I, colors,6,	char *)		/* from regcomp.c */
 
@@ -292,17 +291,16 @@ The C variable which corresponds to Perl's $^W warning variable.
 */
 
 PERLVAR(I, dowarn,	U8)
+#ifdef PERL_SAWAMPERSAND
 PERLVAR(I, sawampersand, U8)		/* must save all match strings */
+#endif
 PERLVAR(I, unsafe,	bool)
 PERLVAR(I, exit_flags,	U8)		/* was exit() unexpected, etc. */
 
 PERLVAR(I, inplace,	char *)
 PERLVAR(I, e_script,	SV *)
 
-/* magical thingies */
 PERLVAR(I, basetime,	Time_t)		/* $^T */
-PERLVAR(I, formfeed,	SV *)		/* $^L */
-
 
 PERLVARI(I, maxsysfd,	I32,	MAXSYSFD)
 					/* top fd to pass to subprocesses */
@@ -612,19 +610,17 @@ PERLVAR(I, XPosixXDigit, SV *)
 PERLVAR(I, VertSpace,   SV *)
 
 PERLVAR(I, NonL1NonFinalFold,   SV *)
+PERLVAR(I, HasMultiCharFold,   SV *)
 
 /* utf8 character class swashes */
 PERLVAR(I, utf8_alnum,	SV *)
 PERLVAR(I, utf8_alpha,	SV *)
-PERLVAR(I, utf8_blank,	SV *)
-PERLVAR(I, utf8_space,	SV *)
 PERLVAR(I, utf8_graph,	SV *)
 PERLVAR(I, utf8_digit,	SV *)
 PERLVAR(I, utf8_upper,	SV *)
 PERLVAR(I, utf8_lower,	SV *)
 PERLVAR(I, utf8_print,	SV *)
 PERLVAR(I, utf8_punct,	SV *)
-PERLVAR(I, utf8_xdigit,	SV *)
 PERLVAR(I, utf8_mark,	SV *)
 PERLVAR(I, utf8_X_regular_begin, SV *)
 PERLVAR(I, utf8_X_extend, SV *)
@@ -633,6 +629,8 @@ PERLVAR(I, utf8_toupper, SV *)
 PERLVAR(I, utf8_totitle, SV *)
 PERLVAR(I, utf8_tolower, SV *)
 PERLVAR(I, utf8_tofold,	SV *)
+PERLVAR(I, utf8_charname_begin, SV *)
+PERLVAR(I, utf8_charname_continue, SV *)
 PERLVAR(I, last_swash_hv, HV *)
 PERLVAR(I, last_swash_tmps, U8 *)
 PERLVAR(I, last_swash_slen, STRLEN)
@@ -741,10 +739,6 @@ PERLVARI(I, destroyhook, destroyable_proc_t, Perl_sv_destroyable)
 PERLVARI(I, signalhook,	despatch_signals_proc_t, Perl_despatch_signals)
 #endif
 
-PERLVARI(I, hash_seed,	UV,	0)	/* Hash initializer */
-
-PERLVARI(I, rehash_seed, UV,	0)	/* 582 hash initializer */
-
 PERLVARI(I, isarev, HV *, NULL)		/* Reverse map of @ISA dependencies */
 
 /* Register of known Method Resolution Orders.
@@ -770,7 +764,7 @@ PERLVAR(I, custom_ops,	HV *)		/* custom op registrations */
 PERLVARI(I, globhook,	globhook_t, NULL)
 
 PERLVARI(I, glob_index,	int,	0)
-PERLVARI(I, padlist_generation, U32, 1)	/* id to identify padlist clones */
+
 PERLVAR(I, reentrant_retint, int)	/* Integer return value from reentrant functions */
 
 /* The last unconditional member of the interpreter structure when 5.10.0 was

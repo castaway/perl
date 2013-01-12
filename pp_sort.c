@@ -1586,7 +1586,7 @@ PP(pp_sort)
 	}
 	else {
 	    if (SvREADONLY(av))
-		Perl_croak_no_modify(aTHX);
+		Perl_croak_no_modify();
 	    else
 		SvREADONLY_on(av);
 	    p1 = p2 = AvARRAY(av);
@@ -1763,10 +1763,10 @@ S_sortcv(pTHX_ SV *const a, SV *const b)
     const I32 oldsaveix = PL_savestack_ix;
     const I32 oldscopeix = PL_scopestack_ix;
     I32 result;
+    SV *resultsv;
     PMOP * const pm = PL_curpm;
     OP * const sortop = PL_op;
     COP * const cop = PL_curcop;
-    SV **pad;
  
     PERL_ARGS_ASSERT_SORTCV;
 
@@ -1777,13 +1777,19 @@ S_sortcv(pTHX_ SV *const a, SV *const b)
     CALLRUNOPS(aTHX);
     PL_op = sortop;
     PL_curcop = cop;
-    pad = PL_curpad; PL_curpad = 0;
     if (PL_stack_sp != PL_stack_base + 1) {
 	assert(PL_stack_sp == PL_stack_base);
-	result = SvIV(&PL_sv_undef);
+	resultsv = &PL_sv_undef;
     }
-    else result = SvIV(*PL_stack_sp);
-    PL_curpad = pad;
+    else resultsv = *PL_stack_sp;
+    if (SvNIOK_nog(resultsv)) result = SvIV(resultsv);
+    else {
+	ENTER;
+	SAVEVPTR(PL_curpad);
+	PL_curpad = 0;
+	result = SvIV(resultsv);
+	LEAVE;
+    }
     while (PL_scopestack_ix > oldscopeix) {
 	LEAVE;
     }
@@ -1918,7 +1924,7 @@ S_sv_i_ncmp(pTHX_ SV *const a, SV *const b)
 #define SORT_NORMAL_RETURN_VALUE(val)  (((val) > 0) ? 1 : ((val) ? -1 : 0))
 
 static I32
-S_amagic_ncmp(pTHX_ register SV *const a, register SV *const b)
+S_amagic_ncmp(pTHX_ SV *const a, SV *const b)
 {
     dVAR;
     SV * const tmpsv = tryCALL_AMAGICbin(a,b,ncmp_amg);
@@ -1939,7 +1945,7 @@ S_amagic_ncmp(pTHX_ register SV *const a, register SV *const b)
 }
 
 static I32
-S_amagic_i_ncmp(pTHX_ register SV *const a, register SV *const b)
+S_amagic_i_ncmp(pTHX_ SV *const a, SV *const b)
 {
     dVAR;
     SV * const tmpsv = tryCALL_AMAGICbin(a,b,ncmp_amg);
@@ -1960,7 +1966,7 @@ S_amagic_i_ncmp(pTHX_ register SV *const a, register SV *const b)
 }
 
 static I32
-S_amagic_cmp(pTHX_ register SV *const str1, register SV *const str2)
+S_amagic_cmp(pTHX_ SV *const str1, SV *const str2)
 {
     dVAR;
     SV * const tmpsv = tryCALL_AMAGICbin(str1,str2,scmp_amg);
@@ -1981,7 +1987,7 @@ S_amagic_cmp(pTHX_ register SV *const str1, register SV *const str2)
 }
 
 static I32
-S_amagic_cmp_locale(pTHX_ register SV *const str1, register SV *const str2)
+S_amagic_cmp_locale(pTHX_ SV *const str1, SV *const str2)
 {
     dVAR;
     SV * const tmpsv = tryCALL_AMAGICbin(str1,str2,scmp_amg);

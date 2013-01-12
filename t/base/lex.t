@@ -1,6 +1,6 @@
 #!./perl
 
-print "1..75\n";
+print "1..85\n";
 
 $x = 'x';
 
@@ -372,3 +372,31 @@ eval 'warn ({$_ => 1} + 1) if 0';
 print "not " if $@;
 print "ok 75 - listop({$_ => 1} + 1)\n";
 print "# $@" if $@;
+
+$test = 76;
+for(qw< require goto last next redo dump >) {
+    eval "sub { $_ foo << 2 }";
+    print "not " if $@;
+    print "ok ", $test++, " - [perl #105924] $_ WORD << ...\n";
+    print "# $@" if $@;
+}
+
+# http://rt.perl.org/rt3/Ticket/Display.html?id=56880
+my $counter = 0;
+eval 'v23: $counter++; goto v23 unless $counter == 2';
+print "not " unless $counter == 2;
+print "ok 82 - Use v[0-9]+ as a label\n";
+$counter = 0;
+eval 'v23 : $counter++; goto v23 unless $counter == 2';
+print "not " unless $counter == 2;
+print "ok 83 - Use v[0-9]+ as a label with space before colon\n";
+ 
+my $output = "";
+eval "package v10::foo; sub test2 { return 'v10::foo' }
+      package v10; sub test { return v10::foo::test2(); }
+      package main; \$output = v10::test(); "; 
+print "not " unless $output eq 'v10::foo';
+print "ok 84 - call a function in package v10::foo\n";
+
+print "not " unless (1?v65:"bar") eq 'A';
+print "ok 85 - colon detection after vstring does not break ? vstring :\n";

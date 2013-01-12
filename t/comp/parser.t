@@ -3,7 +3,7 @@
 # Checks if the parser behaves correctly in edge cases
 # (including weird syntax errors)
 
-print "1..152\n";
+print "1..154\n";
 
 sub failed {
     my ($got, $expected, $name) = @_;
@@ -318,9 +318,9 @@ like($@, qr/BEGIN failed--compilation aborted/, 'BEGIN 7' );
   eval qq[ %$xFC ];
   like($@, qr/Identifier too long/, "too long id in % sigil ctx");
 
-  eval qq[ \\&$xFC ]; # take a ref since I don't want to call it
-  is($@, "", "252 character & sigil ident ok");
-  eval qq[ \\&$xFD ];
+  eval qq[ \\&$xFB ]; # take a ref since I don't want to call it
+  is($@, "", "251 character & sigil ident ok");
+  eval qq[ \\&$xFC ];
   like($@, qr/Identifier too long/, "too long id in & sigil ctx");
 
   eval qq[ *$xFC ];
@@ -442,6 +442,13 @@ is prototype "Hello::_he_said", '_', 'initial tick in sub declaration';
     like("$x[0]-> [0]", qr/^ARRAY\([^)]*\)-> \[0]\z/,
 	'literal -> [0] after an array subscript within ""');
 }
+
+eval 'no if $] >= 5.17.4 warnings => "deprecated"';
+is 1,1, ' no crash for "no ... syntax error"';
+
+for my $pkg(()){}
+$pkg = 3;
+is $pkg, 3, '[perl #114942] for my $foo()){} $foo';
 
 # Add new tests HERE (above this line)
 

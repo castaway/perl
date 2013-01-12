@@ -2,7 +2,7 @@ use ExtUtils::MakeMaker;
 use Config;
 use strict;
 
-our $VERSION = "1.16";
+our $VERSION = "1.17";
 
 my %err = ();
 my %wsa = ();
@@ -125,9 +125,6 @@ sub get_files {
     } elsif ($^O eq 'os390') {
 	# OS/390 C compiler doesn't generate #file or #line directives
 	$file{'/usr/include/errno.h'} = 1;
-    } elsif ($Config{archname} eq 'epoc') {
-	# Watch out for cross compiling for EPOC (usually done on linux)
-	$file{'/usr/local/epocemx/epocsdk/include/libc/sys/errno.h'} = 1;
     } elsif ($Config{archname} eq 'arm-riscos') {
 	# Watch out for cross compiling for RISC OS
 	my $dep = `echo "#include <errno.h>" | gcc -E -M -`;
@@ -139,10 +136,13 @@ sub get_files {
 	      $Config{gccversion} !~ /intel/i
 	      # might be using, say, Intel's icc
 	     ) {
+    # When cross-compiling we may store a path for gcc's "sysroot" option:
+    my $sysroot = $Config{sysroot} || '';
 	# Some Linuxes have weird errno.hs which generate
 	# no #file or #line directives
-	my $linux_errno_h = -e '/usr/include/errno.h' ?
-	    '/usr/include/errno.h' : '/usr/local/include/errno.h';
+    my $linux_errno_h = -e "$sysroot/usr/include/errno.h"
+         ? "$sysroot/usr/include/errno.h"
+         : "$sysroot/usr/local/include/errno.h";
 	$file{$linux_errno_h} = 1;
     } elsif ($^O eq 'beos' || $^O eq 'haiku') {
 	# hidden in a special place

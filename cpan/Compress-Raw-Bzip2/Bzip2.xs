@@ -9,7 +9,7 @@
  *
  */
 
-
+#define PERL_NO_GET_CONTEXT
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
@@ -496,7 +496,7 @@ bzdeflate (s, buf, output)
     if (DO_UTF8(buf) && !sv_utf8_downgrade(buf, 1))
          croak("Wide character in " COMPRESS_CLASS "::bzdeflate input parameter");
 #endif         
-    s->stream.next_in = (char*)SvPVbyte_nolen(buf) ;
+    s->stream.next_in = (char*)SvPV_nomg_nolen(buf) ;
     s->stream.avail_in = SvCUR(buf) ;
      
     /* and retrieve the output buffer */
@@ -723,8 +723,8 @@ bzinflate (s, buf, output)
     uInt	cur_length = 0;
     uInt	prefix_length = 0;
     uInt	increment = 0;
-    STRLEN  stmp   = NO_INIT
     uInt    bufinc = NO_INIT
+    STRLEN  na = NO_INIT ;
   PREINIT:
 #ifdef UTF8_AVAILABLE    
     bool	out_utf8  = FALSE;
@@ -734,15 +734,18 @@ bzinflate (s, buf, output)
     /* If the buffer is a reference, dereference it */
     buf = deRef(buf, "bzinflate") ;
 
-    if (s->flags & FLAG_CONSUME_INPUT && SvREADONLY(buf))
-        croak(UNCOMPRESS_CLASS "::bzinflate input parameter cannot be read-only when ConsumeInput is specified");
+    if (s->flags & FLAG_CONSUME_INPUT) {
+        if (SvREADONLY(buf))
+            croak(UNCOMPRESS_CLASS "::bzinflate input parameter cannot be read-only when ConsumeInput is specified");
+        SvPV_force(buf, na);
+    }
 #ifdef UTF8_AVAILABLE    
     if (DO_UTF8(buf) && !sv_utf8_downgrade(buf, 1))
          croak("Wide character in " UNCOMPRESS_CLASS "::bzinflate input parameter");
 #endif         
     
     /* initialise the input buffer */
-    s->stream.next_in = (char*)SvPVbyte_force(buf, stmp) ;
+    s->stream.next_in = (char*)SvPV_nomg_nolen(buf) ;
     s->stream.avail_in = SvCUR(buf);
 	
     /* and retrieve the output buffer */

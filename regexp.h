@@ -18,6 +18,8 @@
 /* we don't want to include this stuff if we are inside of
    an external regex engine based on the core one - like re 'debug'*/
 
+#include "utf8.h"
+
 struct regnode {
     U8	flags;
     U8  type;
@@ -44,7 +46,7 @@ struct reg_substr_data {
     struct reg_substr_datum data[3];	/* Actual array */
 };
 
-#ifdef PERL_OLD_COPY_ON_WRITE
+#ifdef PERL_ANY_COW
 #define SV_SAVED_COPY   SV *saved_copy; /* If non-NULL, SV which is COW from original */
 #else
 #define SV_SAVED_COPY
@@ -102,8 +104,8 @@ struct reg_code_block {
 	/* Information about the match that the perl core uses to */	\
 	/* manage things */						\
 	U32 extflags;	/* Flags used both externally and internally */	\
-	I32 minlen;	/* mininum possible length of string to match */\
-	I32 minlenret;	/* mininum possible length of $& */		\
+	I32 minlen;	/* mininum possible number of chars in string to match */\
+	I32 minlenret;	/* mininum possible number of chars in $& */		\
 	U32 gofs;	/* chars left of pos that we search from */	\
 	/* substring data about strings that must appear in the */	\
 	/* final match, used for optimisations */			\
@@ -365,6 +367,19 @@ get_regex_charset_name(const U32 flags, STRLEN* const lenp)
     }
 }
 
+/*
+  Two flags no longer used.
+  RXf_SPLIT used to be set in Perl_pmruntime if op_flags & OPf_SPECIAL,
+  i.e., split.  It was used by the regex engine to check whether it should
+  set RXf_SKIPWHITE.  Regexp plugins on CPAN also have done the same thing
+  historically, so we leave these flags defined.
+*/
+#ifndef PERL_CORE
+# define RXf_SPLIT		0
+# define RXf_SKIPWHITE		0
+#endif
+
+
 /* Anchor and GPOS related stuff */
 #define RXf_ANCH_BOL    	(1<<(RXf_BASE_SHIFT+0))
 #define RXf_ANCH_MBOL   	(1<<(RXf_BASE_SHIFT+1))
@@ -393,15 +408,9 @@ get_regex_charset_name(const U32 flags, STRLEN* const lenp)
 #define RXf_USE_INTUIT_NOML	(1<<(RXf_BASE_SHIFT+12))
 #define RXf_USE_INTUIT_ML	(1<<(RXf_BASE_SHIFT+13))
 #define RXf_INTUIT_TAIL 	(1<<(RXf_BASE_SHIFT+14))
-
-/*
-  Set in Perl_pmruntime if op_flags & OPf_SPECIAL, i.e. split. Will
-  be used by regex engines to check whether they should set
-  RXf_SKIPWHITE
-*/
-#define RXf_SPLIT		(1<<(RXf_BASE_SHIFT+15))
-
 #define RXf_USE_INTUIT		(RXf_USE_INTUIT_NOML|RXf_USE_INTUIT_ML)
+
+#define RXf_MODIFIES_VARS	(1<<(RXf_BASE_SHIFT+15))
 
 /* Copy and tainted info */
 #define RXf_COPY_DONE   	(1<<(RXf_BASE_SHIFT+16))
@@ -414,7 +423,6 @@ get_regex_charset_name(const U32 flags, STRLEN* const lenp)
 
 /* Flags indicating special patterns */
 #define RXf_START_ONLY		(1<<(RXf_BASE_SHIFT+19)) /* Pattern is /^/ */
-#define RXf_SKIPWHITE		(1<<(RXf_BASE_SHIFT+20)) /* Pattern is for a split / / */
 #define RXf_WHITE		(1<<(RXf_BASE_SHIFT+21)) /* Pattern is /\s+/ */
 #define RXf_NULL		(1U<<(RXf_BASE_SHIFT+22)) /* Pattern is // */
 #if RXf_BASE_SHIFT+22 > 31
@@ -426,6 +434,14 @@ get_regex_charset_name(const U32 flags, STRLEN* const lenp)
  * regen/regcomp.pl so that regnodes.h is updated with the changes.
  *
  */
+
+#if NO_TAINT_SUPPORT
+#   define RX_ISTAINTED(prog)    0
+#   define RX_TAINT_on(prog)     NOOP
+#else
+#   define RX_ISTAINTED(prog)    (RX_EXTFLAGS(prog) & RXf_TAINTED)
+#   define RX_TAINT_on(prog)     (RX_EXTFLAGS(prog) |= RXf_TAINTED)
+#endif
 
 #define RX_HAS_CUTGROUP(prog) ((prog)->intflags & PREGf_CUTGROUP_SEEN)
 #define RXp_MATCH_TAINTED(prog)	(RXp_EXTFLAGS(prog) & RXf_TAINTED_SEEN)
@@ -449,82 +465,37 @@ get_regex_charset_name(const U32 flags, STRLEN* const lenp)
 #define RXp_EXTFLAGS(rx)	((rx)->extflags)
 
 /* For source compatibility. We used to store these explicitly.  */
-#define RX_PRECOMP(prog)	(RX_WRAPPED(prog) + ((struct regexp *)SvANY(prog))->pre_prefix)
-#define RX_PRECOMP_const(prog)	(RX_WRAPPED_const(prog) + ((struct regexp *)SvANY(prog))->pre_prefix)
+#define RX_PRECOMP(prog)	(RX_WRAPPED(prog) + ReANY(prog)->pre_prefix)
+#define RX_PRECOMP_const(prog)	(RX_WRAPPED_const(prog) + ReANY(prog)->pre_prefix)
 /* FIXME? Are we hardcoding too much here and constraining plugin extension
    writers? Specifically, the value 1 assumes that the wrapped version always
    has exactly one character at the end, a ')'. Will that always be true?  */
-#define RX_PRELEN(prog)		(RX_WRAPLEN(prog) - ((struct regexp *)SvANY(prog))->pre_prefix - 1)
-#define RX_WRAPPED(prog)	SvPVX(prog)
-#define RX_WRAPPED_const(prog)	SvPVX_const(prog)
+#define RX_PRELEN(prog)		(RX_WRAPLEN(prog) - ReANY(prog)->pre_prefix - 1)
+#define RX_WRAPPED(prog)	ReANY(prog)->xpv_len_u.xpvlenu_pv
+#define RX_WRAPPED_const(prog)	((const char *)RX_WRAPPED(prog))
 #define RX_WRAPLEN(prog)	SvCUR(prog)
-#define RX_CHECK_SUBSTR(prog)	(((struct regexp *)SvANY(prog))->check_substr)
+#define RX_CHECK_SUBSTR(prog)	(ReANY(prog)->check_substr)
 #define RX_REFCNT(prog)		SvREFCNT(prog)
-#if defined(__GNUC__) && !defined(PERL_GCC_BRACE_GROUPS_FORBIDDEN)
-#  define RX_EXTFLAGS(prog)						\
-    (*({								\
-	const REGEXP *const _rx_extflags = (prog);			\
-	assert(SvTYPE(_rx_extflags) == SVt_REGEXP);			\
-	&RXp_EXTFLAGS(SvANY(_rx_extflags));				\
-    }))
-#  define RX_ENGINE(prog)						\
-    (*({								\
-	const REGEXP *const _rx_engine = (prog);			\
-	assert(SvTYPE(_rx_engine) == SVt_REGEXP);			\
-	&SvANY(_rx_engine)->engine;					\
-    }))
-#  define RX_SUBBEG(prog)						\
-    (*({								\
-	const REGEXP *const _rx_subbeg = (prog);			\
-	assert(SvTYPE(_rx_subbeg) == SVt_REGEXP);			\
-	&SvANY(_rx_subbeg)->subbeg;					\
-    }))
-#  define RX_SUBOFFSET(prog)						\
-    (*({								\
-	const REGEXP *const _rx_suboffset = (prog);			\
-	assert(SvTYPE(_rx_suboffset) == SVt_REGEXP);			\
-	&SvANY(_rx_suboffset)->suboffset;				\
-    }))
-#  define RX_SUBCOFFSET(prog)						\
-    (*({								\
-	const REGEXP *const _rx_subcoffset = (prog);			\
-	assert(SvTYPE(_rx_subcoffset) == SVt_REGEXP);			\
-	&SvANY(_rx_subcoffset)->subcoffset;				\
-    }))
-#  define RX_OFFS(prog)							\
-    (*({								\
-	const REGEXP *const _rx_offs = (prog);				\
-	assert(SvTYPE(_rx_offs) == SVt_REGEXP);				\
-	&SvANY(_rx_offs)->offs;						\
-    }))
-#  define RX_NPARENS(prog)						\
-    (*({								\
-	const REGEXP *const _rx_nparens = (prog);			\
-	assert(SvTYPE(_rx_nparens) == SVt_REGEXP);			\
-	&SvANY(_rx_nparens)->nparens;					\
-    }))
-#else
-#  define RX_EXTFLAGS(prog)	RXp_EXTFLAGS((struct regexp *)SvANY(prog))
-#  define RX_ENGINE(prog)	(((struct regexp *)SvANY(prog))->engine)
-#  define RX_SUBBEG(prog)	(((struct regexp *)SvANY(prog))->subbeg)
-#  define RX_SUBOFFSET(prog)	(((struct regexp *)SvANY(prog))->suboffset)
-#  define RX_SUBCOFFSET(prog)	(((struct regexp *)SvANY(prog))->subcoffset)
-#  define RX_OFFS(prog)		(((struct regexp *)SvANY(prog))->offs)
-#  define RX_NPARENS(prog)	(((struct regexp *)SvANY(prog))->nparens)
-#endif
-#define RX_SUBLEN(prog)		(((struct regexp *)SvANY(prog))->sublen)
-#define RX_MINLEN(prog)		(((struct regexp *)SvANY(prog))->minlen)
-#define RX_MINLENRET(prog)	(((struct regexp *)SvANY(prog))->minlenret)
-#define RX_GOFS(prog)		(((struct regexp *)SvANY(prog))->gofs)
-#define RX_LASTPAREN(prog)	(((struct regexp *)SvANY(prog))->lastparen)
-#define RX_LASTCLOSEPAREN(prog)	(((struct regexp *)SvANY(prog))->lastcloseparen)
-#define RX_SAVED_COPY(prog)	(((struct regexp *)SvANY(prog))->saved_copy)
+#define RX_EXTFLAGS(prog)	RXp_EXTFLAGS(ReANY(prog))
+#define RX_ENGINE(prog)		(ReANY(prog)->engine)
+#define RX_SUBBEG(prog)		(ReANY(prog)->subbeg)
+#define RX_SUBOFFSET(prog)	(ReANY(prog)->suboffset)
+#define RX_SUBCOFFSET(prog)	(ReANY(prog)->subcoffset)
+#define RX_OFFS(prog)		(ReANY(prog)->offs)
+#define RX_NPARENS(prog)	(ReANY(prog)->nparens)
+#define RX_SUBLEN(prog)		(ReANY(prog)->sublen)
+#define RX_MINLEN(prog)		(ReANY(prog)->minlen)
+#define RX_MINLENRET(prog)	(ReANY(prog)->minlenret)
+#define RX_GOFS(prog)		(ReANY(prog)->gofs)
+#define RX_LASTPAREN(prog)	(ReANY(prog)->lastparen)
+#define RX_LASTCLOSEPAREN(prog)	(ReANY(prog)->lastcloseparen)
+#define RX_SAVED_COPY(prog)	(ReANY(prog)->saved_copy)
 
 #endif /* PLUGGABLE_RE_EXTENSION */
 
 /* Stuff that needs to be included in the pluggable extension goes below here */
 
-#ifdef PERL_OLD_COPY_ON_WRITE
+#ifdef PERL_ANY_COW
 #define RX_MATCH_COPY_FREE(rx) \
 	STMT_START {if (RX_SAVED_COPY(rx)) { \
 	    SV_CHECK_THINKFIRST_COW_DROP(RX_SAVED_COPY(rx)); \
@@ -582,6 +553,7 @@ get_regex_charset_name(const U32 flags, STRLEN* const lenp)
 #  define ReREFCNT_dec(re)	SvREFCNT_dec(re)
 #  define ReREFCNT_inc(re)	((REGEXP *) SvREFCNT_inc(re))
 #endif
+#define ReANY(re)		S_ReANY((const REGEXP *)(re))
 
 /* FIXME for plugins. */
 
@@ -734,7 +706,7 @@ typedef struct regmatch_state {
 	struct {
 	    /* this first element must match u.yes */
 	    struct regmatch_state *prev_yes_state;
-	    I32 c1, c2;		/* case fold search */
+	    int c1, c2;		/* case fold search */
 	    CHECKPOINT cp;
 	    U32 lastparen;
 	    U32 lastcloseparen;
@@ -743,6 +715,8 @@ typedef struct regmatch_state {
 	    bool minmod;
 	    regnode *A, *B;	/* the nodes corresponding to /A*B/  */
 	    regnode *me;	/* the curlym node */
+            U8 c1_utf8[UTF8_MAXBYTES+1];  /* */
+            U8 c2_utf8[UTF8_MAXBYTES+1];
 	} curlym;
 
 	struct {
@@ -750,12 +724,14 @@ typedef struct regmatch_state {
 	    CHECKPOINT cp;
 	    U32 lastparen;
 	    U32 lastcloseparen;
-	    I32 c1, c2;		/* case fold search */
+	    int c1, c2;		/* case fold search */
 	    char *maxpos;	/* highest possible point in string to match */
 	    char *oldloc;	/* the previous locinput */
 	    int count;
 	    int min, max;	/* {m,n} */
 	    regnode *A, *B;	/* the nodes corresponding to /A*B/  */
+            U8 c1_utf8[UTF8_MAXBYTES+1];  /* */
+            U8 c2_utf8[UTF8_MAXBYTES+1];
 	} curly; /* and CURLYN/PLUS/STAR */
 
     } u;
@@ -814,7 +790,7 @@ struct re_save_state {
     U32 re_state_regsize;		/* from regexec.c */
     char *re_state_reg_poscache;	/* cache of pos of WHILEM */
     char *re_state_reg_starttry;	/* from regexec.c */
-#ifdef PERL_OLD_COPY_ON_WRITE
+#ifdef PERL_ANY_COW
     SV *re_state_nrs;			/* was placeholder: unused since 5.8.0 (5.7.2 patch #12027 for bug ID 20010815.012). Used to save rx->saved_copy */
 #endif
 };

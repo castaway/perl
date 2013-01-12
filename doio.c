@@ -61,7 +61,7 @@
 #include <signal.h>
 
 bool
-Perl_do_openn(pTHX_ GV *gv, register const char *oname, I32 len, int as_raw,
+Perl_do_openn(pTHX_ GV *gv, const char *oname, I32 len, int as_raw,
 	      int rawmode, int rawperm, PerlIO *supplied_fp, SV **svp,
 	      I32 num_svs)
 {
@@ -623,9 +623,9 @@ Perl_do_openn(pTHX_ GV *gv, register const char *oname, I32 len, int as_raw,
                 char newname[FILENAME_MAX+1];
                 if (PerlIO_getname(fp, newname)) {
                     if (fd == PerlIO_fileno(PerlIO_stdout()))
-                        Perl_vmssetuserlnm(aTHX_ "SYS$OUTPUT", newname);
+                        vmssetuserlnm("SYS$OUTPUT", newname);
                     if (fd == PerlIO_fileno(PerlIO_stderr()))
-                        Perl_vmssetuserlnm(aTHX_ "SYS$ERROR",  newname);
+                        vmssetuserlnm("SYS$ERROR", newname);
                 }
 	    }
 #endif
@@ -706,7 +706,7 @@ say_false:
 }
 
 PerlIO *
-Perl_nextargv(pTHX_ register GV *gv)
+Perl_nextargv(pTHX_ GV *gv)
 {
     dVAR;
     SV *sv;
@@ -806,7 +806,7 @@ Perl_nextargv(pTHX_ register GV *gv)
 		    }
 #endif
 #ifdef HAS_RENAME
-#if !defined(DOSISH) && !defined(__CYGWIN__) && !defined(EPOC)
+#if !defined(DOSISH) && !defined(__CYGWIN__)
 		    if (PerlLIO_rename(PL_oldname,SvPVX_const(sv)) < 0) {
 			Perl_ck_warner_d(aTHX_ packWARN(WARN_INPLACE),
 					 "Can't rename %s to %"SVf": %s, skipping file",
@@ -1199,7 +1199,7 @@ my_chsize(int fd, Off_t length)
 #endif /* !HAS_TRUNCATE && !HAS_CHSIZE */
 
 bool
-Perl_do_print(pTHX_ register SV *sv, PerlIO *fp)
+Perl_do_print(pTHX_ SV *sv, PerlIO *fp)
 {
     dVAR;
 
@@ -1382,7 +1382,7 @@ S_exec_failed(pTHX_ const char *cmd, int fd, int do_report)
 }
 
 bool
-Perl_do_aexec5(pTHX_ SV *really, register SV **mark, register SV **sp,
+Perl_do_aexec5(pTHX_ SV *really, SV **mark, SV **sp,
 	       int fd, int do_report)
 {
     dVAR;
@@ -1571,7 +1571,7 @@ Perl_do_exec3(pTHX_ const char *incmd, int fd, int do_report)
 #endif
 
 I32
-Perl_apply(pTHX_ I32 type, register SV **mark, register SV **sp)
+Perl_apply(pTHX_ I32 type, SV **mark, SV **sp)
 {
     dVAR;
     I32 val;
@@ -1599,11 +1599,11 @@ Perl_apply(pTHX_ I32 type, register SV **mark, register SV **sp)
 
 #define APPLY_TAINT_PROPER() \
     STMT_START {							\
-	if (PL_tainted) { TAINT_PROPER(what); }				\
+	if (TAINT_get) { TAINT_PROPER(what); }				\
     } STMT_END
 
     /* This is a first heuristic; it doesn't catch tainting magic. */
-    if (PL_tainting) {
+    if (TAINTING_get) {
 	while (++mark <= sp) {
 	    if (SvTAINTED(*mark)) {
 		TAINT;
@@ -1874,7 +1874,7 @@ nothing in the core.
 /* Do the permissions allow some operation?  Assumes statcache already set. */
 #ifndef VMS /* VMS' cando is in vms.c */
 bool
-Perl_cando(pTHX_ Mode_t mode, bool effective, register const Stat_t *statbufp)
+Perl_cando(pTHX_ Mode_t mode, bool effective, const Stat_t *statbufp)
 /* effective is a flag, true for EUID, or for checking if the effective gid
  *  is in the list of groups returned from getgroups().
  */

@@ -19,26 +19,101 @@
 An enum of flags for Perl types.  These are found in the file B<sv.h>
 in the C<svtype> enum.  Test these flags with the C<SvTYPE> macro.
 
-=for apidoc AmU||SVt_PV
-Pointer type flag for scalars.  See C<svtype>.
+The types are:
+
+    SVt_NULL
+    SVt_BIND (unused)
+    SVt_IV
+    SVt_NV
+    SVt_RV
+    SVt_PV
+    SVt_PVIV
+    SVt_PVNV
+    SVt_PVMG
+    SVt_REGEXP
+    SVt_PVGV
+    SVt_PVLV
+    SVt_PVAV
+    SVt_PVHV
+    SVt_PVCV
+    SVt_PVFM
+    SVt_PVIO
+
+These are most easily explained from the bottom up.
+
+SVt_PVIO is for I/O objects, SVt_PVFM for formats, SVt_PVCV for
+subroutines, SVt_PVHV for hashes and SVt_PVAV for arrays.
+
+All the others are scalar types, that is, things that can be bound to a
+C<$> variable.  For these, the internal types are mostly orthogonal to
+types in the Perl language.
+
+Hence, checking C<< SvTYPE(sv) < SVt_PVAV >> is the best way to see whether
+something is a scalar.
+
+SVt_PVGV represents a typeglob.  If !SvFAKE(sv), then it is a real,
+incoercible typeglob.  If SvFAKE(sv), then it is a scalar to which a
+typeglob has been assigned.  Assigning to it again will stop it from being
+a typeglob.  SVt_PVLV represents a scalar that delegates to another scalar
+behind the scenes.  It is used, e.g., for the return value of C<substr> and
+for tied hash and array elements.  It can hold any scalar value, including
+a typeglob. SVt_REGEXP is for regular expressions.
+
+SVt_PVMG represents a "normal" scalar (not a typeglob, regular expression,
+or delegate).  Since most scalars do not need all the internal fields of a
+PVMG, we save memory by allocating smaller structs when possible.  All the
+other types are just simpler forms of SVt_PVMG, with fewer internal fields.
+ SVt_NULL can only hold undef.  SVt_IV can hold undef, an integer, or a
+reference.  (SVt_RV is an alias for SVt_IV, which exists for backward
+compatibility.)  SVt_NV can hold any of those or a double.  SVt_PV can only
+hold undef or a string.  SVt_PVIV is a superset of SVt_PV and SVt_IV.
+SVt_PVNV is similar.  SVt_PVMG can hold anything SVt_PVNV can hold, but it
+can, but does not have to, be blessed or magical.
+
+=for apidoc AmU||SVt_NULL
+Type flag for scalars.  See L</svtype>.
 
 =for apidoc AmU||SVt_IV
-Integer type flag for scalars.  See C<svtype>.
+Type flag for scalars.  See L</svtype>.
 
 =for apidoc AmU||SVt_NV
-Double type flag for scalars.  See C<svtype>.
+Type flag for scalars.  See L</svtype>.
+
+=for apidoc AmU||SVt_PV
+Type flag for scalars.  See L</svtype>.
+
+=for apidoc AmU||SVt_PVIV
+Type flag for scalars.  See L</svtype>.
+
+=for apidoc AmU||SVt_PVNV
+Type flag for scalars.  See L</svtype>.
 
 =for apidoc AmU||SVt_PVMG
-Type flag for blessed scalars.  See C<svtype>.
+Type flag for scalars.  See L</svtype>.
+
+=for apidoc AmU||SVt_REGEXP
+Type flag for regular expressions.  See L</svtype>.
+
+=for apidoc AmU||SVt_PVGV
+Type flag for typeglobs.  See L</svtype>.
+
+=for apidoc AmU||SVt_PVLV
+Type flag for scalars.  See L</svtype>.
 
 =for apidoc AmU||SVt_PVAV
-Type flag for arrays.  See C<svtype>.
+Type flag for arrays.  See L</svtype>.
 
 =for apidoc AmU||SVt_PVHV
-Type flag for hashes.  See C<svtype>.
+Type flag for hashes.  See L</svtype>.
 
 =for apidoc AmU||SVt_PVCV
-Type flag for code refs.  See C<svtype>.
+Type flag for subroutines.  See L</svtype>.
+
+=for apidoc AmU||SVt_PVFM
+Type flag for formats.  See L</svtype>.
+
+=for apidoc AmU||SVt_PVIO
+Type flag for I/O objects.  See L</svtype>.
 
 =cut
 */
@@ -108,6 +183,7 @@ typedef struct hek HEK;
 	IV      svu_iv;			\
 	UV      svu_uv;			\
 	SV*     svu_rv;		/* pointer to another SV */		\
+	struct regexp* svu_rx;		\
 	SV**    svu_array;		\
 	HE**	svu_hash;		\
 	GP*	svu_gp;			\
@@ -262,7 +338,8 @@ perform the upgrade if necessary.  See C<svtype>.
 				       subroutine in another package. Set the
 				       GvIMPORTED_CV_on() if it needs to be
 				       expanded to a real GV */
-/*                      0x00010000  *** FREE SLOT */
+#define SVf_IsCOW	0x00010000  /* copy on write (shared hash key if
+				       SvLEN == 0) */
 #define SVs_PADTMP	0x00020000  /* in use as tmp; only if ! SVs_PADMY */
 #define SVs_PADSTALE	0x00020000  /* lexical has gone out of scope;
 					only valid for SVs_PADMY */
@@ -277,18 +354,12 @@ perform the upgrade if necessary.  See C<svtype>.
 
 #define SVf_FAKE	0x01000000  /* 0: glob is just a copy
 				       1: SV head arena wasn't malloc()ed
-				       2: in conjunction with SVf_READONLY
-					  marks a shared hash key scalar
-					  (SvLEN == 0) or a copy on write
-					  string (SvLEN != 0) [SvIsCOW(sv)]
-				       3: For PVCV, whether CvUNIQUE(cv)
+				       2: For PVCV, whether CvUNIQUE(cv)
 					  refers to an eval or once only
 					  [CvEVAL(cv), CvSPECIAL(cv)]
-				       4: On a pad name SV, that slot in the
+				       3: On a pad name SV, that slot in the
 					  frame AV is a REFCNT'ed reference
 					  to a lexical from "outside". */
-#define SVphv_REHASH	SVf_FAKE    /* 5: On a PVHV, hash values are being
-					  recalculated */
 #define SVf_OOK		0x02000000  /* has valid offset value. For a PVHV this
 				       means that a hv_aux struct is present
 				       after the main array */
@@ -301,7 +372,7 @@ perform the upgrade if necessary.  See C<svtype>.
 
 
 
-#define SVf_THINKFIRST	(SVf_READONLY|SVf_ROK|SVf_FAKE|SVs_RMG)
+#define SVf_THINKFIRST	(SVf_READONLY|SVf_ROK|SVf_FAKE|SVs_RMG|SVf_IsCOW)
 
 #define SVf_OK		(SVf_IOK|SVf_NOK|SVf_POK|SVf_ROK| \
 			 SVp_IOK|SVp_NOK|SVp_POK|SVpgv_GP)
@@ -369,7 +440,12 @@ perform the upgrade if necessary.  See C<svtype>.
     HV*		xmg_stash;	/* class package */			\
     union _xmgu	xmg_u;							\
     STRLEN	xpv_cur;	/* length of svu_pv as a C string */    \
-    STRLEN	xpv_len 	/* allocated size */
+    union {								\
+	STRLEN	xpvlenu_len; 	/* allocated size */			\
+	char *	xpvlenu_pv;	/* regexp string */			\
+    } xpv_len_u	
+
+#define xpv_len	xpv_len_u.xpvlenu_len
 
 union _xnvu {
     NV	    xnv_nv;		/* numeric value, if any */
@@ -459,7 +535,10 @@ typedef U16 cv_flags_t;
 	OP *	xcv_root;							\
 	void	(*xcv_xsub) (pTHX_ CV*);					\
     }		xcv_root_u;							\
-    GV *	xcv_gv;								\
+    union {								\
+	GV *	xcv_gv;							\
+	HEK *	xcv_hek;						\
+    }		xcv_gv_u;						\
     char *	xcv_file;							\
     PADLIST *	xcv_padlist;							\
     CV *	xcv_outside;							\
@@ -705,8 +784,10 @@ Set the actual length of the string which is in the SV.  See C<SvIV_set>.
 #define assert_not_glob(sv)	assert_(!isGV_with_GP(sv))
 
 #define SvOK(sv)		((SvTYPE(sv) == SVt_BIND)		\
-				 ? (SvFLAGS(SvRV(sv)) & SVf_OK)		\
-				 : (SvFLAGS(sv) & SVf_OK))
+				 ? (SvFLAGS(SvRV(sv)) & SVf_OK		\
+					|| isREGEXP(SvRV(sv)))		\
+				 : (SvFLAGS(sv) & SVf_OK		\
+					 || isREGEXP(sv)))
 #define SvOK_off(sv)		(assert_not_ROK(sv) assert_not_glob(sv)	\
 				 SvFLAGS(sv) &=	~(SVf_OK|		\
 						  SVf_IVisUV|SVf_UTF8),	\
@@ -1068,7 +1149,8 @@ sv_force_normal does nothing.
 	 }))
 #    define SvCUR(sv)							\
 	(*({ const SV *const _svcur = (const SV *)(sv);			\
-	    assert(PL_valid_types_PVX[SvTYPE(_svcur) & SVt_MASK]);	\
+	    assert(PL_valid_types_PVX[SvTYPE(_svcur) & SVt_MASK]	\
+		|| SvTYPE(_svcur) == SVt_REGEXP);			\
 	    assert(!isGV_with_GP(_svcur));				\
 	    assert(!(SvTYPE(_svcur) == SVt_PVIO				\
 		     && !(IoFLAGS(_svcur) & IOf_FAKE_DIRP)));		\
@@ -1200,7 +1282,8 @@ sv_force_normal does nothing.
                 (((XPVMG*)  SvANY(sv))->xmg_stash = (val)); } STMT_END
 #define SvCUR_set(sv, val) \
 	STMT_START { \
-		assert(PL_valid_types_PVX[SvTYPE(sv) & SVt_MASK]);	\
+		assert(PL_valid_types_PVX[SvTYPE(sv) & SVt_MASK]	\
+			|| SvTYPE(sv) == SVt_REGEXP);	\
 		assert(!isGV_with_GP(sv));		\
 		assert(!(SvTYPE(sv) == SVt_PVIO		\
 		     && !(IoFLAGS(sv) & IOf_FAKE_DIRP))); \
@@ -1354,14 +1437,18 @@ attention to precisely which outputs are influenced by which inputs.
 
 #define sv_taint(sv)	  sv_magic((sv), NULL, PERL_MAGIC_taint, NULL, 0)
 
-#define SvTAINTED(sv)	  (SvMAGICAL(sv) && sv_tainted(sv))
-#define SvTAINTED_on(sv)  STMT_START{ if(PL_tainting){sv_taint(sv);}   }STMT_END
-#define SvTAINTED_off(sv) STMT_START{ if(PL_tainting){sv_untaint(sv);} }STMT_END
+#if NO_TAINT_SUPPORT
+#   define SvTAINTED(sv) 0
+#else
+#   define SvTAINTED(sv)	  (SvMAGICAL(sv) && sv_tainted(sv))
+#endif
+#define SvTAINTED_on(sv)  STMT_START{ if(TAINTING_get){sv_taint(sv);}   }STMT_END
+#define SvTAINTED_off(sv) STMT_START{ if(TAINTING_get){sv_untaint(sv);} }STMT_END
 
 #define SvTAINT(sv)			\
     STMT_START {			\
-	if (PL_tainting) {		\
-	    if (PL_tainted)		\
+	if (TAINTING_get) {		\
+	    if (TAINT_get)		\
 		SvTAINTED_on(sv);	\
 	}				\
     } STMT_END
@@ -1621,6 +1708,8 @@ Like sv_utf8_upgrade, but doesn't do magic on C<sv>.
 
 #define SvTRUE(sv)        ((sv) && (SvGMAGICAL(sv) ? sv_2bool(sv) : SvTRUE_common(sv, sv_2bool_nomg(sv))))
 #define SvTRUE_nomg(sv)   ((sv) && (                                SvTRUE_common(sv, sv_2bool_nomg(sv))))
+#define SvTRUE_NN(sv)              (SvGMAGICAL(sv) ? sv_2bool(sv) : SvTRUE_common(sv, sv_2bool_nomg(sv)))
+#define SvTRUE_nomg_NN(sv) (                                        SvTRUE_common(sv, sv_2bool_nomg(sv)))
 #define SvTRUE_common(sv,fallback) (			\
       !SvOK(sv)						\
 	? 0						\
@@ -1644,11 +1733,6 @@ Like sv_utf8_upgrade, but doesn't do magic on C<sv>.
 #  define SvPVbytex_nolen(sv) ({SV *_sv = (sv); SvPVbyte_nolen(_sv); })
 #  define SvTRUEx(sv)      ({SV *_sv = (sv); SvTRUE(_sv); })
 #  define SvTRUEx_nomg(sv) ({SV *_sv = (sv); SvTRUE_nomg(_sv); })
-#  define SvPVXtrue(sv)						\
-    ({XPV *nxpv;						\
-     (nxpv = (XPV*)SvANY(sv))					\
-      && (nxpv->xpv_cur > 1					\
-	  || (nxpv->xpv_cur && *(sv)->sv_u.svu_pv != '0'));})
 
 #else /* __GNUC__ */
 
@@ -1667,15 +1751,22 @@ Like sv_utf8_upgrade, but doesn't do magic on C<sv>.
 #  define SvPVbytex_nolen(sv) ((PL_Sv = (sv)), SvPVbyte_nolen(PL_Sv))
 #  define SvTRUEx(sv)      ((PL_Sv = (sv)), SvTRUE(PL_Sv))
 #  define SvTRUEx_nomg(sv) ((PL_Sv = (sv)), SvTRUE_nomg(PL_Sv))
-#  define SvPVXtrue(sv)						\
-    ((PL_Xpv = (XPV*)SvANY(PL_Sv = (sv)))			\
-     && (PL_Xpv->xpv_cur > 1					\
-	 || (PL_Xpv->xpv_cur && *PL_Sv->sv_u.svu_pv != '0')))
 #endif /* __GNU__ */
 
-#define SvIsCOW(sv)	((SvFLAGS(sv) & (SVf_FAKE | SVf_READONLY)) == \
-			   (SVf_FAKE | SVf_READONLY) && !isGV_with_GP(sv) \
-			   && SvTYPE(sv) != SVt_REGEXP)
+#define SvPVXtrue(sv)	(					\
+    ((XPV*)SvANY((sv))) 					\
+     && (							\
+	((XPV*)SvANY((sv)))->xpv_cur > 1			\
+	|| (							\
+	    ((XPV*)SvANY((sv)))->xpv_cur			\
+	    && *(sv)->sv_u.svu_pv != '0'				\
+	)							\
+    )								\
+)
+
+#define SvIsCOW(sv)		(SvFLAGS(sv) & SVf_IsCOW)
+#define SvIsCOW_on(sv)		(SvFLAGS(sv) |= SVf_IsCOW)
+#define SvIsCOW_off(sv)		(SvFLAGS(sv) &= ~SVf_IsCOW)
 #define SvIsCOW_shared_hash(sv)	(SvIsCOW(sv) && SvLEN(sv) == 0)
 
 #define SvSHARED_HEK_FROM_PV(pvx) \
@@ -1744,6 +1835,13 @@ Like sv_utf8_upgrade, but doesn't do magic on C<sv>.
     ((SvIsCOW(sv) ? sv_force_normal_flags(sv, 0) : (void) 0), 0)
 #  define SvIsCOW_normal(sv)	(SvIsCOW(sv) && SvLEN(sv))
 #  define SvRELEASE_IVX_(sv)	SvRELEASE_IVX(sv),
+#  define SvCANCOW(sv) \
+	(SvIsCOW(sv) || (SvFLAGS(sv) & CAN_COW_MASK) == CAN_COW_FLAGS)
+/* This is a pessimistic view. Scalar must be purely a read-write PV to copy-
+   on-write.  */
+#  define CAN_COW_MASK	(SVs_OBJECT|SVs_GMG|SVs_SMG|SVs_RMG|SVf_IOK|SVf_NOK| \
+			 SVf_POK|SVf_ROK|SVp_IOK|SVp_NOK|SVp_POK|SVf_FAKE| \
+			 SVf_OOK|SVf_BREAK|SVf_READONLY)
 #else
 #  define SvRELEASE_IVX(sv)   0
 /* This little game brought to you by the need to shut this warning up:
@@ -1751,11 +1849,26 @@ mg.c: In function 'Perl_magic_get':
 mg.c:1024: warning: left-hand operand of comma expression has no effect
 */
 #  define SvRELEASE_IVX_(sv)  /**/
+#  ifdef PERL_NEW_COPY_ON_WRITE
+#   define SvCANCOW(sv)					    \
+	(SvIsCOW(sv)					     \
+	 ? SvLEN(sv) ? CowREFCNT(sv) != SV_COW_REFCNT_MAX : 1 \
+	 : (SvFLAGS(sv) & CAN_COW_MASK) == CAN_COW_FLAGS       \
+			    && SvCUR(sv)+1 < SvLEN(sv))
+   /* Note: To allow 256 COW "copies", a refcnt of 0 means 1. */
+#   define CowREFCNT(sv)	(*(U8 *)(SvPVX(sv)+SvLEN(sv)-1))
+#   define SV_COW_REFCNT_MAX	((1 << sizeof(U8)*8) - 1)
+#   ifndef SV_COW_THRESHOLD
+#    define SV_COW_THRESHOLD	0	/* min string length for cow */
+#   endif
+#   ifndef SV_COWBUF_THRESHOLD
+#    define SV_COWBUF_THRESHOLD	1250	/* min string length for cow */
+#   endif				/* over existing buffer */
+#   define CAN_COW_MASK	(SVf_POK|SVf_ROK|SVp_POK|SVf_FAKE| \
+			 SVf_OOK|SVf_BREAK|SVf_READONLY)
+#  endif
 #endif /* PERL_OLD_COPY_ON_WRITE */
 
-#define CAN_COW_MASK	(SVs_OBJECT|SVs_GMG|SVs_SMG|SVs_RMG|SVf_IOK|SVf_NOK| \
-			 SVf_POK|SVf_ROK|SVp_IOK|SVp_NOK|SVp_POK|SVf_FAKE| \
-			 SVf_OOK|SVf_BREAK|SVf_READONLY)
 #define CAN_COW_FLAGS	(SVp_POK|SVf_POK)
 
 #define SV_CHECK_THINKFIRST(sv) if (SvTHINKFIRST(sv)) \
@@ -1802,6 +1915,8 @@ mg.c:1024: warning: left-hand operand of comma expression has no effect
 #define sv_insert(bigstr, offset, len, little, littlelen)		\
 	Perl_sv_insert_flags(aTHX_ (bigstr),(offset), (len), (little),	\
 			     (littlelen), SV_GMAGIC)
+#define sv_mortalcopy(sv) \
+	Perl_sv_mortalcopy_flags(aTHX_ sv, SV_GMAGIC|SV_DO_COW_SVSETSV)
 
 /* Should be named SvCatPVN_utf8_upgrade? */
 #define sv_catpvn_nomg_utf8_upgrade(dsv, sstr, slen, nsv)	\
@@ -1814,6 +1929,16 @@ mg.c:1024: warning: left-hand operand of comma expression has no effect
 	    sv_utf8_upgrade(nsv);			\
 	    sv_catsv_nomg(dsv, nsv);			\
 	} STMT_END
+#define sv_catpvn_nomg_maybeutf8(dsv, sstr, slen, is_utf8) \
+	sv_catpvn_flags(dsv, sstr, slen, (is_utf8)?SV_CATUTF8:SV_CATBYTES)
+
+#ifdef PERL_CORE
+# define sv_or_pv_len_utf8(sv, pv, bytelen)	      \
+    (SvGAMAGIC(sv)				       \
+	? utf8_length((U8 *)(pv), (U8 *)(pv)+(bytelen))	\
+	: sv_len_utf8(sv))
+# define sv_or_pv_pos_u2b(sv,s,p,lp) S_sv_or_pv_pos_u2b(aTHX_ sv,s,p,lp)
+#endif
 
 /*
 =for apidoc Am|SV*|newRV_inc|SV* sv
@@ -1951,9 +2076,18 @@ See also C<PL_sv_yes> and C<PL_sv_no>.
 	assert (!SvIOKp(sv));					       \
 	(SvFLAGS(sv) &= ~SVpgv_GP);				       \
     } STMT_END
+#define isREGEXP(sv) \
+    (SvTYPE(sv) == SVt_REGEXP				      \
+     || (SvFLAGS(sv) & (SVTYPEMASK|SVp_POK|SVpgv_GP|SVf_FAKE)) \
+	 == (SVt_PVLV|SVf_FAKE))
 
 
-#define SvGROW(sv,len) (SvLEN(sv) < (len) ? sv_grow(sv,len) : SvPVX(sv))
+#ifdef PERL_NEW_COPY_ON_WRITE
+# define SvGROW(sv,len) \
+	(SvIsCOW(sv) || SvLEN(sv) < (len) ? sv_grow(sv,len) : SvPVX(sv))
+#else
+# define SvGROW(sv,len) (SvLEN(sv) < (len) ? sv_grow(sv,len) : SvPVX(sv))
+#endif
 #define SvGROW_mutable(sv,len) \
     (SvLEN(sv) < (len) ? sv_grow(sv,len) : SvPVX_mutable(sv))
 #define Sv_Grow sv_grow

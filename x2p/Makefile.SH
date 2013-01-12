@@ -1,3 +1,5 @@
+#!/bin/sh
+
 case $PERL_CONFIG_SH in
 '')
 	if test -f config.sh; then TOP=.;
@@ -67,7 +69,7 @@ OPTIMIZE = $optimize
 
 .SUFFIXES: .c \$(OBJ_EXT)
 
-RUN = $run
+RUN =
 PERL = $perl
 
 !GROK!THIS!

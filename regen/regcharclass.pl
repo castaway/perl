@@ -1,3 +1,4 @@
+#!perl
 package CharClass::Matcher;
 use strict;
 use 5.008;
@@ -7,6 +8,9 @@ use Text::Wrap qw(wrap);
 use Data::Dumper;
 $Data::Dumper::Useqq= 1;
 our $hex_fmt= "0x%02X";
+
+sub DEBUG () { 0 }
+$|=1 if DEBUG;
 
 sub ASCII_PLATFORM { (ord('A') == 65) }
 
@@ -160,10 +164,12 @@ sub __uni_latin1 {
     my $str= shift;
     my $max= 0;
     my @cp;
+    my @cp_high;
     my $only_has_invariants = 1;
     for my $ch ( split //, $str ) {
         my $cp= ord $ch;
         push @cp, $cp;
+        push @cp_high, $cp if $cp > 255;
         $max= $cp if $max < $cp;
         if (! ASCII_PLATFORM && $only_has_invariants) {
             if ($cp > 255) {
@@ -188,7 +194,7 @@ sub __uni_latin1 {
         utf8::upgrade($u);
         $u= [ unpack "U0C*", $u ] if defined $u;
     }
-    return ( \@cp, $n, $l, $u );
+    return ( \@cp, \@cp_high, $n, $l, $u );
 }
 
 #
@@ -200,14 +206,38 @@ sub __uni_latin1 {
 
 sub __clean {
     my ( $expr )= @_;
+
+    #return $expr;
+
     our $parens;
     $parens= qr/ (?> \( (?> (?: (?> [^()]+ ) | (??{ $parens }) )* ) \) ) /x;
 
-    #print "$parens\n$expr\n";
+    ## remove redundant parens
     1 while $expr =~ s/ \( \s* ( $parens ) \s* \) /$1/gx;
-    1 while $expr =~ s/ \( \s* ($parens) \s* \? \s*
-        \( \s* ($parens) \s* \? \s* ($parens|[^:]+?) \s* : \s* ($parens|[^)]+?) \s* \)
-        \s* : \s* \4 \s* \)/( ( $1 && $2 ) ? $3 : 0 )/gx;
+
+
+    # repeatedly simplify conditions like
+    #       ( (cond1) ? ( (cond2) ? X : Y ) : Y )
+    # into
+    #       ( ( (cond1) && (cond2) ) ? X : Y )
+    # Also similarly handles expressions like:
+    #       : (cond1) ? ( (cond2) ? X : Y ) : Y )
+    # Note the inclusion of the close paren in ([:()]) and the open paren in ([()]) is
+    # purely to ensure we have a balanced set of parens in the expression which makes
+    # it easier to understand the pattern in an editor that understands paren's, we do
+    # not expect either of these cases to actually fire. - Yves
+    1 while $expr =~ s/
+        ([:()])  \s*
+            ($parens) \s*
+            \? \s*
+                \( \s* ($parens) \s*
+                    \? \s* ($parens|[^()?:\s]+?) \s*
+                    :  \s* ($parens|[^()?:\s]+?) \s*
+                \) \s*
+            : \s* \5 \s*
+        ([()])
+    /$1 ( $2 && $3 ) ? $4 : $5 $6/gx;
+
     return $expr;
 }
 
@@ -337,20 +367,28 @@ sub new {
                 }
             }
             next;
+        } elsif ($str =~ / ^ do \s+ ( .* ) /x) {
+            die "do '$1' failed: $!$@" if ! do $1 or $@;
+            next;
+        } elsif ($str =~ / ^ & \s* ( .* ) /x) { # user-furnished sub() call
+            my @results = eval "$1";
+            die "eval '$1' failed: $@" if $@;
+            push @{$opt{txt}}, @results;
+            next;
         } else {
             die "Unparsable line: $txt\n";
         }
-        my ( $cp, $low, $latin1, $utf8 )= __uni_latin1( $str );
+        my ( $cp, $cp_high, $low, $latin1, $utf8 )= __uni_latin1( $str );
         my $UTF8= $low   || $utf8;
         my $LATIN1= $low || $latin1;
         my $high = (scalar grep { $_ < 256 } @$cp) ? 0 : $utf8;
         #die Dumper($txt,$cp,$low,$latin1,$utf8)
         #    if $txt=~/NEL/ or $utf8 and @$utf8>3;
 
-        @{ $self->{strs}{$str} }{qw( str txt low utf8 latin1 high cp UTF8 LATIN1 )}=
-          ( $str, $txt, $low, $utf8, $latin1, $high, $cp, $UTF8, $LATIN1 );
+        @{ $self->{strs}{$str} }{qw( str txt low utf8 latin1 high cp cp_high UTF8 LATIN1 )}=
+          ( $str, $txt, $low, $utf8, $latin1, $high, $cp, $cp_high, $UTF8, $LATIN1 );
         my $rec= $self->{strs}{$str};
-        foreach my $key ( qw(low utf8 latin1 high cp UTF8 LATIN1) ) {
+        foreach my $key ( qw(low utf8 latin1 high cp cp_high UTF8 LATIN1) ) {
             $self->{size}{$key}{ 0 + @{ $self->{strs}{$str}{$key} } }++
               if $self->{strs}{$str}{$key};
         }
@@ -428,8 +466,12 @@ sub _optree {
     $else= 0  unless defined $else;
     $depth= 0 unless defined $depth;
 
-    my @conds= sort { $a <=> $b } grep { length $_ } keys %$trie;
+    # if we have an emptry string as a key it means we are in an
+    # accepting state and unless we can match further on should
+    # return the value of the '' key.
     if (exists $trie->{''} ) {
+        # we can now update the "else" value, anything failing to match
+        # after this point should return the value from this.
         if ( $ret_type eq 'cp' ) {
             $else= $self->{strs}{ $trie->{''} }{cp}[0];
             $else= sprintf "$self->{val_fmt}", $else if $else > 9;
@@ -441,37 +483,54 @@ sub _optree {
             $else= "len=$depth, $else";
         }
     }
+    # extract the meaningful keys from the trie, filter out '' as
+    # it means we are an accepting state (end of sequence).
+    my @conds= sort { $a <=> $b } grep { length $_ } keys %$trie;
+
+    # if we havent any keys there is no further we can match and we
+    # can return the "else" value.
     return $else if !@conds;
-    my $node= {};
-    my $root= $node;
-    my ( $yes_res, $as_code, @cond );
-    my $test= $test_type eq 'cp' ? "cp" : "((U8*)s)[$depth]";
-    my $Update= sub {
-        $node->{vals}= [@cond];
-        $node->{test}= $test;
-        $node->{yes}= $yes_res;
-        $node->{depth}= $depth;
-        $node->{no}= shift;
-    };
-    while ( @conds ) {
-        my $cond= shift @conds;
-        my $res=
-          $self->_optree( $trie->{$cond}, $test_type, $ret_type, $else,
-            $depth + 1 );
+
+
+    my $test= $test_type =~ /^cp/ ? "cp" : "((U8*)s)[$depth]";
+    # first we loop over the possible keys/conditions and find out what they look like
+    # we group conditions with the same optree together.
+    my %dmp_res;
+    my @res_order;
+    local $Data::Dumper::Sortkeys=1;
+    foreach my $cond ( @conds ) {
+
+        # get the optree for this child/condition
+        my $res= $self->_optree( $trie->{$cond}, $test_type, $ret_type, $else, $depth + 1 );
+        # convert it to a string with Dumper
         my $res_code= Dumper( $res );
-        if ( !$yes_res || $res_code ne $as_code ) {
-            if ( $yes_res ) {
-                $Update->( {} );
-                $node= $node->{no};
-            }
-            ( $yes_res, $as_code )= ( $res, $res_code );
-            @cond= ( $cond );
-        } else {
-            push @cond, $cond;
+
+        push @{$dmp_res{$res_code}{vals}}, $cond;
+        if (!$dmp_res{$res_code}{optree}) {
+            $dmp_res{$res_code}{optree}= $res;
+            push @res_order, $res_code;
         }
     }
-    $Update->( $else );
-    return $root;
+
+    # now that we have deduped the optrees we construct a new optree containing the merged
+    # results.
+    my %root;
+    my $node= \%root;
+    foreach my $res_code_idx (0 .. $#res_order) {
+        my $res_code= $res_order[$res_code_idx];
+        $node->{vals}= $dmp_res{$res_code}{vals};
+        $node->{test}= $test;
+        $node->{yes}= $dmp_res{$res_code}{optree};
+        $node->{depth}= $depth;
+        if ($res_code_idx < $#res_order) {
+            $node= $node->{no}= {};
+        } else {
+            $node->{no}= $else;
+        }
+    }
+
+    # return the optree.
+    return \%root;
 }
 
 # my $optree= optree(%opts);
@@ -483,7 +542,7 @@ sub optree {
     my %opt= @_;
     my $trie= $self->make_trie( $opt{type}, $opt{max_depth} );
     $opt{ret_type} ||= 'len';
-    my $test_type= $opt{type} eq 'cp' ? 'cp' : 'depth';
+    my $test_type= $opt{type} =~ /^cp/ ? 'cp' : 'depth';
     return $self->_optree( $trie, $test_type, $opt{ret_type}, $opt{else}, 0 );
 }
 
@@ -531,7 +590,7 @@ sub length_optree {
     my $type= $opt{type};
 
     die "Can't do a length_optree on type 'cp', makes no sense."
-      if $type eq 'cp';
+      if $type =~ /^cp/;
 
     my ( @size, $method );
 
@@ -558,102 +617,257 @@ sub length_optree {
 }
 
 sub calculate_mask(@) {
+    # Look at the input list of byte values.  This routine returns an array of
+    # mask/base pairs to generate that list.
+
     my @list = @_;
     my $list_count = @list;
 
-    # Look at the input list of byte values.  This routine sees if the set
-    # consisting of those bytes is exactly determinable by using a
-    # mask/compare operation.  If not, it returns an empty list; if so, it
-    # returns a list consisting of (mask, compare).  For example, consider a
-    # set consisting of the numbers 0xF0, 0xF1, 0xF2, and 0xF3.  If we want to
-    # know if a number 'c' is in the set, we could write:
+    # Consider a set of byte values, A, B, C ....  If we want to determine if
+    # <c> is one of them, we can write c==A || c==B || c==C ....  If the
+    # values are consecutive, we can shorten that to A<=c && c<=Z, which uses
+    # far fewer branches.  If only some of them are consecutive we can still
+    # save some branches by creating range tests for just those that are
+    # consecutive. _cond_as_str() does this work for looking for ranges.
+    #
+    # Another approach is to look at the bit patterns for A, B, C .... and see
+    # if they have some commonalities.  That's what this function does.  For
+    # example, consider a set consisting of the bytes
+    # 0xF0, 0xF1, 0xF2, and 0xF3.  We could write:
     #   0xF0 <= c && c <= 0xF4
     # But the following mask/compare also works, and has just one test:
-    #   c & 0xFC == 0xF0
-    # The reason it works is that the set consists of exactly those numbers
+    #   (c & 0xFC) == 0xF0
+    # The reason it works is that the set consists of exactly those bytes
     # whose first 4 bits are 1, and the next two are 0.  (The value of the
-    # other 2 bits is immaterial in determining if a number is in the set or
+    # other 2 bits is immaterial in determining if a byte is in the set or
     # not.)  The mask masks out those 2 irrelevant bits, and the comparison
-    # makes sure that the result matches all bytes that which match those 6
-    # material bits exactly.  In other words, the set of numbers contains
+    # makes sure that the result matches all bytes which match those 6
+    # material bits exactly.  In other words, the set of bytes contains
     # exactly those whose bottom two bit positions are either 0 or 1.  The
     # same principle applies to bit positions that are not necessarily
     # adjacent.  And it can be applied to bytes that differ in 1 through all 8
     # bit positions.  In order to be a candidate for this optimization, the
-    # number of numbers in the test must be a power of 2.  Based on this
-    # count, we know the number of bit positions that must differ.
-    my $bit_diff_count = 0;
-    my $compare = $list[0];
-    if ($list_count == 2) {
-        $bit_diff_count = 1;
-    }
-    elsif ($list_count == 4) {
-        $bit_diff_count = 2;
-    }
-    elsif ($list_count == 8) {
-        $bit_diff_count = 3;
-    }
-    elsif ($list_count == 16) {
-        $bit_diff_count = 4;
-    }
-    elsif ($list_count == 32) {
-        $bit_diff_count = 5;
-    }
-    elsif ($list_count == 64) {
-        $bit_diff_count = 6;
-    }
-    elsif ($list_count == 128) {
-        $bit_diff_count = 7;
-    }
-    elsif ($list_count == 256) {
+    # number of bytes in the set must be a power of 2.
+    #
+    # Consider a different example, the set 0x53, 0x54, 0x73, and 0x74.  That
+    # requires 4 tests using either ranges or individual values, and even
+    # though the number in the set is a power of 2, it doesn't qualify for the
+    # mask optimization described above because the number of bits that are
+    # different is too large for that.  However, the set can be expressed as
+    # two branches with masks thusly:
+    #   (c & 0xDF) == 0x53 || (c & 0xDF) == 0x54
+    # a branch savings of 50%.  This is done by splitting the set into two
+    # subsets each of which has 2 elements, and within each set the values
+    # differ by 1 byte.
+    #
+    # This function attempts to find some way to save some branches using the
+    # mask technique.  If not, it returns an empty list; if so, it
+    # returns a list consisting of
+    #   [ [compare1, mask1], [compare2, mask2], ...
+    #     [compare_n, undef], [compare_m, undef], ...
+    #   ]
+    # The <mask> is undef in the above for those bytes that must be tested
+    # for individually.
+    #
+    # This function does not attempt to find the optimal set.  To do so would
+    # probably require testing all possible combinations, and keeping track of
+    # the current best one.
+    #
+    # There are probably much better algorithms, but this is the one I (khw)
+    # came up with.  We start with doing a bit-wise compare of every byte in
+    # the set with every other byte.  The results are sorted into arrays of
+    # all those that differ by the same bit positions.  These are stored in a
+    # hash with the each key being the bits they differ in.  Here is the hash
+    # for the 0x53, 0x54, 0x73, 0x74 set:
+    # {
+    #    4 => {
+    #            "0,1,2,5" => [
+    #                            83,
+    #                            116,
+    #                            84,
+    #                            115
+    #                        ]
+    #        },
+    #    3 => {
+    #            "0,1,2" => [
+    #                        83,
+    #                        84,
+    #                        115,
+    #                        116
+    #                        ]
+    #        }
+    #    1 => {
+    #            5 => [
+    #                    83,
+    #                    115,
+    #                    84,
+    #                    116
+    #                ]
+    #        },
+    # }
+    #
+    # The set consisting of values which differ in the 4 bit positions 0, 1,
+    # 2, and 5 from some other value in the set consists of all 4 values.
+    # Likewise all 4 values differ from some other value in the 3 bit
+    # positions 0, 1, and 2; and all 4 values differ from some other value in
+    # the single bit position 5.  The keys at the uppermost level in the above
+    # hash, 1, 3, and 4, give the number of bit positions that each sub-key
+    # below it has.  For example, the 4 key could have as its value an array
+    # consisting of "0,1,2,5", "0,1,2,6", and "3,4,6,7", if the inputs were
+    # such.  The best optimization will group the most values into a single
+    # mask.  The most values will be the ones that differ in the most
+    # positions, the ones with the largest value for the topmost key.  These
+    # keys, are thus just for convenience of sorting by that number, and do
+    # not have any bearing on the core of the algorithm.
+    #
+    # We start with an element from largest number of differing bits.  The
+    # largest in this case is 4 bits, and there is only one situation in this
+    # set which has 4 differing bits, "0,1,2,5".  We look for any subset of
+    # this set which has 16 values that differ in these 4 bits.  There aren't
+    # any, because there are only 4 values in the entire set.  We then look at
+    # the next possible thing, which is 3 bits differing in positions "0,1,2".
+    # We look for a subset that has 8 values that differ in these 3 bits.
+    # Again there are none.  So we go to look for the next possible thing,
+    # which is a subset of 2**1 values that differ only in bit position 5.  83
+    # and 115 do, so we calculate a mask and base for those and remove them
+    # from every set.  Since there is only the one set remaining, we remove
+    # them from just this one.  We then look to see if there is another set of
+    # 2 values that differ in bit position 5.  84 and 116 do, so we calculate
+    # a mask and base for those and remove them from every set (again only
+    # this set remains in this example).  The set is now empty, and there are
+    # no more sets to look at, so we are done.
+
+    if ($list_count == 256) {   # All 256 is trivially masked
         return (0, 0);
     }
 
-    # If the count wasn't a power of 2, we can't apply this optimization
-    return if ! $bit_diff_count;
+    my %hash;
 
-    my %bit_map;
-
-    # For each byte in the list, find the bit positions in it whose value
-    # differs from the first byte in the set.
-    for (my $i = 1; $i < @list; $i++) {
-        my @positions = pop_count($list[0] ^ $list[$i]);
-
-        # If the number of differing bits is greater than those permitted by
-        # the set size, this optimization doesn't apply.
-        return if @positions > $bit_diff_count;
-
-        # Save the bit positions that differ.
-        foreach my $bit (@positions) {
-            $bit_map{$bit} = 1;
+    # Generate bits-differing lists for each element compared against each
+    # other element
+    for my $i (0 .. $list_count - 2) {
+        for my $j ($i + 1 .. $list_count - 1) {
+            my @bits_that_differ = pop_count($list[$i] ^ $list[$j]);
+            my $differ_count = @bits_that_differ;
+            my $key = join ",", @bits_that_differ;
+            push @{$hash{$differ_count}{$key}}, $list[$i] unless grep { $_ == $list[$i] } @{$hash{$differ_count}{$key}};
+            push @{$hash{$differ_count}{$key}}, $list[$j];
         }
-
-        # If the total so far is greater than those permitted by the set size,
-        # this optimization doesn't apply.
-        return if keys %bit_map > $bit_diff_count;
-
-
-        # The value to compare against is the AND of all the members of the
-        # set.  The bit positions that are the same in all will be correct in
-        # the AND, and the bit positions that differ will be 0.
-        $compare &= $list[$i];
     }
 
-    # To get to here, we have gone through all bytes in the set,
-    # and determined that they all differ from each other in at most
-    # the number of bits allowed for the set's quantity.  And since we have
-    # tested all 2**N possibilities, we know that the set includes no fewer
-    # elements than we need,, so the optimization applies.
-    die "panic: internal logic error" if keys %bit_map != $bit_diff_count;
+    print STDERR __LINE__, ": calculate_mask() called:  List of values grouped by differing bits: ", Dumper \%hash if DEBUG;
 
-    # The mask is the bit positions where things differ, complemented.
-    my $mask = 0;
-    foreach my $position (keys %bit_map) {
-        $mask |= 1 << $position;
+    my @final_results;
+    foreach my $count (reverse sort { $a <=> $b } keys %hash) {
+        my $need = 2 ** $count;     # Need 8 values for 3 differing bits, etc
+        foreach my $bits (sort keys $hash{$count}) {
+
+            print STDERR __LINE__, ": For $count bit(s) difference ($bits), need $need; have ", scalar @{$hash{$count}{$bits}}, "\n" if DEBUG;
+
+            # Look only as long as there are at least as many elements in the
+            # subset as are needed
+            while ((my $cur_count = @{$hash{$count}{$bits}}) >= $need) {
+
+                print STDERR __LINE__, ": Looking at bit positions ($bits): ", Dumper $hash{$count}{$bits} if DEBUG;
+
+                # Start with the first element in it
+                my $try_base = $hash{$count}{$bits}[0];
+                my @subset = $try_base;
+
+                # If it succeeds, we return a mask and a base to compare
+                # against the masked value.  That base will be the AND of
+                # every element in the subset.  Initialize to the one element
+                # we have so far.
+                my $compare = $try_base;
+
+                # We are trying to find a subset of this that has <need>
+                # elements that differ in the bit positions given by the
+                # string $bits, which is comma separated.
+                my @bits = split ",", $bits;
+
+                TRY: # Look through the remainder of the list for other
+                     # elements that differ only by these bit positions.
+
+                for (my $i = 1; $i < $cur_count; $i++) {
+                    my $try_this = $hash{$count}{$bits}[$i];
+                    my @positions = pop_count($try_base ^ $try_this);
+
+                    print STDERR __LINE__, ": $try_base vs $try_this: is (", join(',', @positions), ") a subset of ($bits)?" if DEBUG;;
+
+                    foreach my $pos (@positions) {
+                        unless (grep { $pos == $_ } @bits) {
+                            print STDERR "  No\n" if DEBUG;
+                            my $remaining = $cur_count - $i - 1;
+                            if ($remaining && @subset + $remaining < $need) {
+                                print STDERR __LINE__, ": Can stop trying $try_base, because even if all the remaining $remaining values work, they wouldn't add up to the needed $need when combined with the existing ", scalar @subset, " ones\n" if DEBUG;
+                                last TRY;
+                            }
+                            next TRY;
+                        }
+                    }
+
+                    print STDERR "  Yes\n" if DEBUG;
+                    push @subset, $try_this;
+
+                    # Add this to the mask base, in case it ultimately
+                    # succeeds,
+                    $compare &= $try_this;
+                }
+
+                print STDERR __LINE__, ": subset (", join(", ", @subset), ") has ", scalar @subset, " elements; needs $need\n" if DEBUG;
+
+                if (@subset < $need) {
+                    shift @{$hash{$count}{$bits}};
+                    next;   # Try with next value
+                }
+
+                # Create the mask
+                my $mask = 0;
+                foreach my $position (@bits) {
+                    $mask |= 1 << $position;
+                }
+                $mask = ~$mask & 0xFF;
+                push @final_results, [$compare, $mask];
+
+                printf STDERR "%d: Got it: compare=%d=0x%X; mask=%X\n", __LINE__, $compare, $compare, $mask if DEBUG;
+
+                # These values are now spoken for.  Remove them from future
+                # consideration
+                foreach my $remove_count (sort keys %hash) {
+                    foreach my $bits (sort keys %{$hash{$remove_count}}) {
+                        foreach my $to_remove (@subset) {
+                            @{$hash{$remove_count}{$bits}} = grep { $_ != $to_remove } @{$hash{$remove_count}{$bits}};
+                        }
+                    }
+                }
+            }
+        }
     }
-    $mask = ~$mask & 0xFF;
 
-    return ($mask, $compare);
+    # Any values that remain in the list are ones that have to be tested for
+    # individually.
+    my @individuals;
+    foreach my $count (reverse sort { $a <=> $b } keys %hash) {
+        foreach my $bits (sort keys $hash{$count}) {
+            foreach my $remaining (@{$hash{$count}{$bits}}) {
+
+                # If we already know about this value, just ignore it.
+                next if grep { $remaining == $_ } @individuals;
+
+                # Otherwise it needs to be returned as something to match
+                # individually
+                push @final_results, [$remaining, undef];
+                push @individuals, $remaining;
+            }
+        }
+    }
+
+    # Sort by increasing numeric value
+    @final_results = sort { $a->[0] <=> $b->[0] } @final_results;
+
+    print STDERR __LINE__, ": Final return: ", Dumper \@final_results if DEBUG;
+
+    return @final_results;
 }
 
 # _cond_as_str
@@ -701,93 +915,127 @@ sub _cond_as_str {
                 @$_ )
             : sprintf( "$self->{val_fmt} == $test", $_ );
         } @ranges;
+
+        return "( " . join( " || ", @ranges ) . " )";
     }
-    else {
-        # If the input set has certain characteristics, we can optimize tests
-        # for it.  This doesn't apply if returning the code point, as we want
-        # each element of the set individually.  The code above is for this
-        # simpler case.
 
-        return 1 if @$cond == 256;  # If all bytes match, is trivially true
+    # If the input set has certain characteristics, we can optimize tests
+    # for it.  This doesn't apply if returning the code point, as we want
+    # each element of the set individually.  The code above is for this
+    # simpler case.
 
-        if (@ranges > 1) {
-            # See if the entire set shares optimizable characterstics, and if
-            # so, return the optimization.  We delay checking for this on sets
-            # with just a single range, as there may be better optimizations
-            # available in that case.
-            my ($mask, $base) = calculate_mask(@$cond);
-            if (defined $mask && defined $base) {
-                return sprintf "( ( $test & $self->{val_fmt} ) == $self->{val_fmt} )", $mask, $base;
+    return 1 if @$cond == 256;  # If all bytes match, is trivially true
+
+    my @masks;
+    if (@ranges > 1) {
+
+        # See if the entire set shares optimizable characterstics, and if so,
+        # return the optimization.  We delay checking for this on sets with
+        # just a single range, as there may be better optimizations available
+        # in that case.
+        @masks = calculate_mask(@$cond);
+
+        # Stringify the output of calculate_mask()
+        if (@masks) {
+            my @return;
+            foreach my $mask_ref (@masks) {
+                if (defined $mask_ref->[1]) {
+                    push @return, sprintf "( ( $test & $self->{val_fmt} ) == $self->{val_fmt} )", $mask_ref->[1], $mask_ref->[0];
+                }
+                else {  # An undefined mask means to use the value as-is
+                    push @return, sprintf "$test == $self->{val_fmt}", $mask_ref->[0];
+                }
             }
+
+            # The best possible case below for specifying this set of values via
+            # ranges is 1 branch per range.  If our mask method yielded better
+            # results, there is no sense trying something that is bound to be
+            # worse.
+            if (@return < @ranges) {
+                return "( " . join( " || ", @return ) . " )";
+            }
+
+            @masks = @return;
         }
+    }
 
-        # Here, there was no entire-class optimization.  Look at each range.
-        for (my $i = 0; $i < @ranges; $i++) {
-            if (! ref $ranges[$i]) {    # Trivial case: no range
-                $ranges[$i] = sprintf "$self->{val_fmt} == $test", $ranges[$i];
+    # Here, there was no entire-class optimization that was clearly better
+    # than doing things by ranges.  Look at each range.
+    my $range_count_extra = 0;
+    for (my $i = 0; $i < @ranges; $i++) {
+        if (! ref $ranges[$i]) {    # Trivial case: no range
+            $ranges[$i] = sprintf "$self->{val_fmt} == $test", $ranges[$i];
+        }
+        elsif ($ranges[$i]->[0] == $ranges[$i]->[1]) {
+            $ranges[$i] =           # Trivial case: single element range
+                    sprintf "$self->{val_fmt} == $test", $ranges[$i]->[0];
+        }
+        else {
+            my $output = "";
+
+            # Well-formed UTF-8 continuation bytes on ascii platforms must be
+            # in the range 0x80 .. 0xBF.  If we know that the input is
+            # well-formed (indicated by not trying to be 'safe'), we can omit
+            # tests that verify that the input is within either of these
+            # bounds.  (No legal UTF-8 character can begin with anything in
+            # this range, so we don't have to worry about this being a
+            # continuation byte or not.)
+            if (ASCII_PLATFORM
+                && ! $opts_ref->{safe}
+                && $opts_ref->{type} =~ / ^ (?: utf8 | high ) $ /xi)
+            {
+                my $lower_limit_is_80 = ($ranges[$i]->[0] == 0x80);
+                my $upper_limit_is_BF = ($ranges[$i]->[1] == 0xBF);
+
+                # If the range is the entire legal range, it matches any legal
+                # byte, so we can omit both tests.  (This should happen only
+                # if the number of ranges is 1.)
+                if ($lower_limit_is_80 && $upper_limit_is_BF) {
+                    return 1;
+                }
+                elsif ($lower_limit_is_80) { # Just use the upper limit test
+                    $output = sprintf("( $test <= $self->{val_fmt} )",
+                                        $ranges[$i]->[1]);
+                }
+                elsif ($upper_limit_is_BF) { # Just use the lower limit test
+                    $output = sprintf("( $test >= $self->{val_fmt} )",
+                                    $ranges[$i]->[0]);
+                }
             }
-            elsif ($ranges[$i]->[0] == $ranges[$i]->[1]) {
-                $ranges[$i] =           # Trivial case: single element range
-                        sprintf "$self->{val_fmt} == $test", $ranges[$i]->[0];
+
+            # If we didn't change to omit a test above, see if the number of
+            # elements is a power of 2 (only a single bit in the
+            # representation of its count will be set) and if so, it may be
+            # that a mask/compare optimization is possible.
+            if ($output eq ""
+                && pop_count($ranges[$i]->[1] - $ranges[$i]->[0] + 1) == 1)
+            {
+                my @list;
+                push @list, $_  for ($ranges[$i]->[0] .. $ranges[$i]->[1]);
+                my @this_masks = calculate_mask(@list);
+
+                # Use the mask if there is just one for the whole range.
+                # Otherwise there is no savings over the two branches that can
+                # define the range.
+                if (@this_masks == 1 && defined $this_masks[0][1]) {
+                    $output = sprintf "( $test & $self->{val_fmt} ) == $self->{val_fmt}", $this_masks[0][1], $this_masks[0][0];
+                }
+            }
+
+            if ($output ne "") {  # Prefer any optimization
+                $ranges[$i] = $output;
             }
             else {
-                my $output = "";
+                # No optimization happened.  We need a test that the code
+                # point is within both bounds.  But, if the bounds are
+                # adjacent code points, it is cleaner to say
+                # 'first == test || second == test'
+                # than it is to say
+                # 'first <= test && test <= second'
 
-                # Well-formed UTF-8 continuation bytes on ascii platforms must
-                # be in the range 0x80 .. 0xBF.  If we know that the input is
-                # well-formed (indicated by not trying to be 'safe'), we can
-                # omit tests that verify that the input is within either of
-                # these bounds.  (No legal UTF-8 character can begin with
-                # anything in this range, so we don't have to worry about this
-                # being a continuation byte or not.)
-                if (ASCII_PLATFORM
-                    && ! $opts_ref->{safe}
-                    && $opts_ref->{type} =~ / ^ (?: utf8 | high ) $ /xi)
-                {
-                    my $lower_limit_is_80 = ($ranges[$i]->[0] == 0x80);
-                    my $upper_limit_is_BF = ($ranges[$i]->[1] == 0xBF);
-
-                    # If the range is the entire legal range, it matches any
-                    # legal byte, so we can omit both tests.  (This should
-                    # happen only if the number of ranges is 1.)
-                    if ($lower_limit_is_80 && $upper_limit_is_BF) {
-                        return 1;
-                    }
-                    elsif ($lower_limit_is_80) { # Just use the upper limit test
-                        $output = sprintf("( $test <= $self->{val_fmt} )",
-                                            $ranges[$i]->[1]);
-                    }
-                    elsif ($upper_limit_is_BF) { # Just use the lower limit test
-                        $output = sprintf("( $test >= $self->{val_fmt} )",
-                                        $ranges[$i]->[0]);
-                    }
-                }
-
-                # If we didn't change to omit a test above, see if the number
-                # of elements is a power of 2 (only a single bit in the
-                # representation of its count will be set) and if so, it may
-                # be that a mask/compare optimization is possible.
-                if ($output eq ""
-                    && pop_count($ranges[$i]->[1] - $ranges[$i]->[0] + 1) == 1)
-                {
-                    my @list;
-                    push @list, $_  for ($ranges[$i]->[0] .. $ranges[$i]->[1]);
-                    my ($mask, $base) = calculate_mask(@list);
-                    if (defined $mask && defined $base) {
-                        $output = sprintf "( $test & $self->{val_fmt} ) == $self->{val_fmt}", $mask, $base;
-                    }
-                }
-
-                if ($output ne "") {  # Prefer any optimization
-                    $ranges[$i] = $output;
-                }
-                elsif ($ranges[$i]->[0] + 1 == $ranges[$i]->[1]) {
-                    # No optimization happened.  We need a test that the code
-                    # point is within both bounds.  But, if the bounds are
-                    # adjacent code points, it is cleaner to say
-                    # 'first == test || second == test'
-                    # than it is to say
-                    # 'first <= test && test <= second'
+                $range_count_extra++;   # This range requires 2 branches to
+                                        # represent
+                if ($ranges[$i]->[0] + 1 == $ranges[$i]->[1]) {
                     $ranges[$i] = "( "
                                 .  join( " || ", ( map
                                     { sprintf "$self->{val_fmt} == $test", $_ }
@@ -801,8 +1049,15 @@ sub _cond_as_str {
         }
     }
 
-    return "( " . join( " || ", @ranges ) . " )";
-
+    # We have generated the list of bytes in two ways; one trying to use masks
+    # to cut the number of branches down, and the other to look at individual
+    # ranges (some of which could be cut down by using a mask for just it).
+    # We return whichever method uses the fewest branches.
+    return "( "
+           . join( " || ", (@masks && @masks < @ranges + $range_count_extra)
+                            ? @masks
+                            : @ranges)
+           . " )";
 }
 
 # _combine
@@ -823,8 +1078,13 @@ sub _combine {
         $gtv= sprintf "$self->{val_fmt}", $item;
     }
     if ( @cond ) {
-        return "( $cstr || ( $gtv < $test &&\n"
-          . $self->_combine( $test, @cond ) . " ) )";
+        my $combine= $self->_combine( $test, @cond );
+        if (@cond >1) {
+            return "( $cstr || ( $gtv < $test &&\n"
+                   . $combine . " ) )";
+        } else {
+            return "( $cstr || $combine )";
+        }
     } else {
         return $cstr;
     }
@@ -878,7 +1138,7 @@ sub render {
 # make a macro of a given type.
 # calls into make_trie and (generic_|length_)optree as needed
 # Opts are:
-# type     : 'cp','generic','high','low','latin1','utf8','LATIN1','UTF8'
+# type     : 'cp','cp_high', 'generic','high','low','latin1','utf8','LATIN1','UTF8'
 # ret_type : 'cp' or 'len'
 # safe     : add length guards to macro
 #
@@ -897,9 +1157,9 @@ sub make_macro {
     my %opts= @_;
     my $type= $opts{type} || 'generic';
     die "Can't do a 'cp' on multi-codepoint character class '$self->{op}'"
-      if $type eq 'cp'
+      if $type =~ /^cp/
       and $self->{has_multi};
-    my $ret_type= $opts{ret_type} || ( $opts{type} eq 'cp' ? 'cp' : 'len' );
+    my $ret_type= $opts{ret_type} || ( $opts{type} =~ /^cp/ ? 'cp' : 'len' );
     my $method;
     if ( $opts{safe} ) {
         $method= 'length_optree';
@@ -909,8 +1169,8 @@ sub make_macro {
         $method= 'optree';
     }
     my $optree= $self->$method( %opts, type => $type, ret_type => $ret_type );
-    my $text= $self->render( $optree, $type eq 'cp', \%opts );
-    my @args= $type eq 'cp' ? 'cp' : 's';
+    my $text= $self->render( $optree, ($type =~ /^cp/) ? 1 : 0, \%opts );
+    my @args= $type =~ /^cp/ ? 'cp' : 's';
     push @args, "e" if $opts{safe};
     push @args, "is_utf8" if $type eq 'generic';
     push @args, "len" if $ret_type eq 'both';
@@ -963,14 +1223,14 @@ if ( !caller ) {
                                                                 # first, as
                                                                 # traditional
         if (%mods) {
-            die "Unknown modifiers: ", join ", ", map { "'$_'" } keys %mods;
+            die "Unknown modifiers: ", join ", ", map { "'$_'" } sort keys %mods;
         }
 
         foreach my $type_spec ( @types ) {
             my ( $type, $ret )= split /-/, $type_spec;
             $ret ||= 'len';
             foreach my $mod ( @mods ) {
-                next if $mod eq 'safe' and $type eq 'cp';
+                next if $mod eq 'safe' and $type =~ /^cp/;
                 delete $mods{$mod};
                 my $macro= $obj->make_macro(
                     type     => $type,
@@ -986,7 +1246,7 @@ if ( !caller ) {
         s/^ \s* (?: \# .* ) ? $ //x;    # squeeze out comment and blanks
         next unless /\S/;
         chomp;
-        if ( /^([A-Z]+)/ ) {
+        if ( /^[A-Z]/ ) {
             $doit->();  # This starts a new definition; do the previous one
             ( $op, $title )= split /\s*:\s*/, $_, 2;
             @txt= ();
@@ -1025,10 +1285,21 @@ if ( !caller ) {
 #
 # The subsequent lines give what code points go into the class defined by the
 # macro.  Multiple characters may be specified via a string like "\x0D\x0A",
-# enclosed in quotes.  Otherwise the lines consist of single Unicode code
-# point, prefaced by 0x; or a single range of Unicode code points separated by
-# a minus (and optional space); or a single Unicode property specified in the
-# standard Perl form "\p{...}".
+# enclosed in quotes.  Otherwise the lines consist of one of:
+#   1)  a single Unicode code point, prefaced by 0x
+#   2)  a single range of Unicode code points separated by a minus (and
+#       optional space)
+#   3)  a single Unicode property specified in the standard Perl form
+#       "\p{...}"
+#   4)  a line like 'do path'.  This will do a 'do' on the file given by
+#       'path'.  It is assumed that this does nothing but load subroutines
+#       (See item 5 below).  The reason 'require path' is not used instead is
+#       because 'do' doesn't assume that path is in @INC.
+#   5)  a subroutine call
+#           &pkg::foo(arg1, ...)
+#       where pkg::foo was loaded by a 'do' line (item 4).  The subroutine
+#       returns an array of entries of forms like items 1-3 above.  This
+#       allows more complex inputs than achievable from the other input types.
 #
 # A blank line or one whose first non-blank character is '#' is a comment.
 # The definition of the macro is terminated by a line unlike those described.
@@ -1060,6 +1331,10 @@ if ( !caller ) {
 #   cp          generate a macro whose name is 'is_BASE_cp' and defines a
 #               class that returns true if the UV parameter is a member of the
 #               class; false if not.
+#   cp_high     like cp, but it is assumed that it is known that the UV
+#               parameter is above Latin1.  The name of the generated macro is
+#               'is_BASE_cp_high'.  This is different from high-cp, derived
+#               below.
 # A macro of the given type is generated for each type listed in the input.
 # The default return value is the number of octets read to generate the match.
 # Append "-cp" to the type to have it instead return the matched codepoint.
@@ -1114,12 +1389,20 @@ LNBREAK: Line Break: \R
 \p{VertSpace}
 
 HORIZWS: Horizontal Whitespace: \h \H
-=> generic UTF8 LATIN1 cp :fast safe
+=> generic UTF8 LATIN1 high cp cp_high :fast safe
 \p{HorizSpace}
 
 VERTWS: Vertical Whitespace: \v \V
-=> generic UTF8 LATIN1 cp :fast safe
+=> generic UTF8 high LATIN1 cp cp_high :fast safe
 \p{VertSpace}
+
+XDIGIT: Hexadecimal digits
+=> UTF8 high cp_high :fast
+\p{XDigit}
+
+XPERLSPACE: \p{XPerlSpace}
+=> generic UTF8 high cp_high :fast
+\p{XPerlSpace}
 
 REPLACEMENT: Unicode REPLACEMENT CHARACTER
 => UTF8 :safe
@@ -1180,3 +1463,16 @@ UTF8_CHAR: Matches utf8 from 1 to 5 bytes
 QUOTEMETA: Meta-characters that \Q should quote
 => high :fast
 \p{_Perl_Quotemeta}
+
+MULTI_CHAR_FOLD: multi-char strings that are folded to by a single character
+=> UTF8 :safe
+do regen/regcharclass_multi_char_folds.pl
+
+# 1 => All folds
+&regcharclass_multi_char_folds::multi_char_folds(1)
+
+MULTI_CHAR_FOLD: multi-char strings that are folded to by a single character
+=> LATIN1 :safe
+
+&regcharclass_multi_char_folds::multi_char_folds(0)
+# 0 => Latin1-only

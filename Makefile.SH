@@ -1,3 +1,14 @@
+#!/bin/sh
+
+# quote() - Creates a shell literal
+# Usage:  echo "...$( quote "..." )..."
+quote() {
+	case "$1" in
+	'') echo "''" ;;
+	*)  echo "$1" | sed 's/\([^a-zA-Z0-9.:_\-\/]\)/\\\1/g' ;;
+	esac
+}
+
 case $PERL_CONFIG_SH in
 '')
 	if test -f config.sh
@@ -37,10 +48,8 @@ true)
 	# Prefix all runs of 'miniperl' and 'perl' with
 	# $ldlibpth so that ./perl finds *this* shared libperl.
 	case "$LD_LIBRARY_PATH" in
-	'')
-		ldlibpth="LD_LIBRARY_PATH=`pwd`";;
-	*)
-		ldlibpth="LD_LIBRARY_PATH=`pwd`:${LD_LIBRARY_PATH}";;
+	'')  ldlibpth="LD_LIBRARY_PATH=$( quote "`pwd`" )" ;;
+	*)   ldlibpth="LD_LIBRARY_PATH=$( quote "`pwd`" ):$( quote "$LD_LIBRARY_PATH" )" ;;
 	esac
 
 	pldlflags="$cccdlflags"
@@ -119,18 +128,18 @@ true)
 	        ldlibpth=''
 	        ;;
 	    *)
-		eval "ldlibpth=\"$ldlibpthname=`pwd`:\$$ldlibpthname\""
+		eval "ldlibpthval=\"\$$ldlibpthname\""
+
+		case "$ldlibpthval" in
+		'')  ldlibpth="$ldlibpthname=$( quote "`pwd`" )" ;;
+		*)   ldlibpth="$ldlibpthname=$( quote "`pwd`" ):$( quote "$ldlibpthval" )" ;;
+		esac
+
 		;;
 	    esac
-	    # Strip off any trailing :'s
-	    ldlibpth=`echo $ldlibpth | sed 's/:*$//'`
+
 	    ;;
         esac
-
-	case "$ldlibpth" in
-	# Protect any spaces
-	*" "*) ldlibpth=`echo $ldlibpth|sed 's/ /\\\\ /g'` ;;
-	esac
 
 	case "$osname" in
 	linux)
@@ -292,7 +301,11 @@ STATIC_LDFLAGS = $static_ldflags
 LDLIBPTH = $ldlibpth
 
 # Sometimes running an executable is an adventure.
-RUN = $run
+RUN =
+
+# When cross-compiling we want to use a (mini)perl built for the host, not the target
+HOST_PERL = $hostperl
+HOST_GENERATE = $hostgenerate
 
 # These variables may need to be manually set for non-Unix systems.
 AR = $full_ar
@@ -482,7 +495,7 @@ mini_obj = $(minindt_obj) $(MINIDTRACE_O)
 ndt_obj = $(obj0) $(obj1) $(obj2) $(obj3) $(ARCHOBJS)
 obj = $(ndt_obj) $(DTRACE_O)
 
-perltoc_pod_prereqs = extra.pods pod/perl5174delta.pod pod/perlapi.pod pod/perlintern.pod pod/perlmodlib.pod pod/perluniprops.pod
+perltoc_pod_prereqs = extra.pods pod/perl5177delta.pod pod/perlapi.pod pod/perlintern.pod pod/perlmodlib.pod pod/perluniprops.pod
 generated_pods = pod/perltoc.pod $(perltoc_pod_prereqs)
 generated_headers = uudmap.h bitcount.h mg_data.h
 
@@ -655,10 +668,22 @@ bitcount.h: generate_uudmap$(HOST_EXE_EXT)
 	$(RUN) ./generate_uudmap$(HOST_EXE_EXT) $(generated_headers)
 
 generate_uudmap$(OBJ_EXT): mg_raw.h
+!NO!SUBS!
 
+if test "X$hostgenerate" != X; then
+	$spitshell >>$Makefile <<'!NO!SUBS!'
+generate_uudmap$(HOST_EXE_EXT): generate_uudmap$(OBJ_EXT)
+	-@rm generate_uudmap$(HOST_EXE_EXT)
+	ln -s $(HOST_GENERATE) generate_uudmap$(HOST_EXE_EXT)
+!NO!SUBS!
+else
+	$spitshell >>$Makefile <<'!NO!SUBS!'
 generate_uudmap$(HOST_EXE_EXT): generate_uudmap$(OBJ_EXT)
 	$(CC) -o generate_uudmap$(EXE_EXT) $(LDFLAGS) generate_uudmap$(OBJ_EXT) $(libs)
+!NO!SUBS!
+fi
 
+$spitshell >>$Makefile <<'!NO!SUBS!'
 miniperlmain$(OBJ_EXT): miniperlmain.c patchlevel.h
 	$(CCCMD) $(PLDLFLAGS) $*.c
 
@@ -866,13 +891,23 @@ $(MINIPERL_EXE): $& $(mini_obj)
 !NO!SUBS!
 		;;
 	*)
-		$spitshell >>$Makefile <<'!NO!SUBS!'
+		if test "X$hostperl" != X; then
+			$spitshell >>$Makefile <<'!NO!SUBS!'
+$(MINIPERL_EXE): $& $(mini_obj)
+	-@rm -f miniperl.xok
+	-@rm $(MINIPERL_EXE)
+	ln -s $(HOST_PERL) $(MINIPERL_EXE)
+	$(LDLIBPTH) $(RUN) ./miniperl$(HOST_EXE_EXT) -w -Ilib -MExporter -e '<?>' || $(MAKE) minitest
+!NO!SUBS!
+		else
+			$spitshell >>$Makefile <<'!NO!SUBS!'
 $(MINIPERL_EXE): $& $(mini_obj)
 	-@rm -f miniperl.xok
 	$(LDLIBPTH) $(CC) $(CLDFLAGS) -o $(MINIPERL_EXE) \
 	    $(mini_obj) $(libs)
 	$(LDLIBPTH) $(RUN) ./miniperl$(HOST_EXE_EXT) -w -Ilib -MExporter -e '<?>' || $(MAKE) minitest
 !NO!SUBS!
+		fi
 		;;
 	esac
 
@@ -1058,9 +1093,9 @@ pod/perlintern.pod: $(MINIPERL_EXE) autodoc.pl embed.fnc
 pod/perlmodlib.pod: $(MINIPERL_EXE) pod/perlmodlib.PL MANIFEST
 	$(MINIPERL) $(Icwd) pod/perlmodlib.PL -q
 
-pod/perl5174delta.pod: pod/perldelta.pod
-	$(RMS) pod/perl5174delta.pod
-	$(LNS) perldelta.pod pod/perl5174delta.pod
+pod/perl5177delta.pod: pod/perldelta.pod
+	$(RMS) pod/perl5177delta.pod
+	$(LNS) perldelta.pod pod/perl5177delta.pod
 
 extra.pods: $(MINIPERL_EXE)
 	-@test ! -f extra.pods || rm -f `cat extra.pods`
@@ -1239,6 +1274,7 @@ realclean:	_realcleaner _mopup
 
 _clobber:
 	-@rm -f Cross/run-* Cross/to-* Cross/from-*
+	-rm -r host
 	rm -f t/test_state
 	rm -f config.sh cppstdin Policy.sh extras.lst
 

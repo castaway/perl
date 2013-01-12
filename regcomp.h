@@ -326,13 +326,10 @@ struct regnode_charclass_class {
 #define ANYOF_LOCALE		 0x01	    /* /l modifier */
 
 /* The fold is calculated and stored in the bitmap where possible at compile
- * time.  However there are two cases where it isn't possible.  These share
- * this bit:  1) under locale, where the actual folding varies depending on
- * what the locale is at the time of execution; and 2) where the folding is
- * specified in a swash, not the bitmap, such as characters which aren't
- * specified in the bitmap, or properties that aren't looked at at compile time
- */
-#define ANYOF_LOC_NONBITMAP_FOLD 0x02
+ * time.  However under locale, the actual folding varies depending on
+ * what the locale is at the time of execution, so it has to be deferred until
+ * then */
+#define ANYOF_LOC_FOLD 0x02
 
 #define ANYOF_INVERT		 0x04
 
@@ -378,7 +375,7 @@ struct regnode_charclass_class {
  * regardless of being inverted; whereas ANYOF_UNICODE_ALL means something
  * different if inverted */
 #define INVERSION_UNAFFECTED_FLAGS (ANYOF_LOCALE                        \
-	                           |ANYOF_LOC_NONBITMAP_FOLD            \
+	                           |ANYOF_LOC_FOLD                      \
 	                           |ANYOF_CLASS                         \
 	                           |ANYOF_EOS                           \
 	                           |ANYOF_NONBITMAP_NON_UTF8)
@@ -387,8 +384,8 @@ struct regnode_charclass_class {
 /* Should be synchronized with a table in regprop() */
 /* 2n should be the normal one, paired with its complement at 2n+1 */
 
-#define ANYOF_ALNUM    ((_CC_WORDCHAR) * 2)  /* \w, PL_utf8_alnum, utf8::IsWord, ALNUM */
-#define ANYOF_NALNUM   ((ANYOF_ALNUM) + 1)
+#define ANYOF_WORDCHAR ((_CC_WORDCHAR) * 2)  /* \w, PL_utf8_alnum, utf8::IsWord, ALNUM */
+#define ANYOF_NWORDCHAR   ((ANYOF_WORDCHAR) + 1)
 #define ANYOF_SPACE    ((_CC_SPACE) * 2)     /* \s */
 #define ANYOF_NSPACE   ((ANYOF_SPACE) + 1)
 #define ANYOF_DIGIT    ((_CC_DIGIT) * 2)     /* \d */
@@ -418,18 +415,28 @@ struct regnode_charclass_class {
 #define ANYOF_BLANK    ((_CC_BLANK) * 2)     /* GNU extension: space and tab: non-vertical space */
 #define ANYOF_NBLANK   ((ANYOF_BLANK) + 1)
 
-#define ANYOF_MAX	32
-#if (ANYOF_MAX <= _HIGHEST_REGCOMP_DOT_H_SYNC * 2 + 1)
+#define ANYOF_MAX      ((ANYOF_NBLANK) + 1) /* So upper loop limit is written:
+                                               '< ANYOF_MAX' */
+#if (ANYOF_MAX > 32)                        /* Must fit in 32-bit word */
 #   error Problem with handy.h _CC_foo #defines
 #endif
 
-/* pseudo classes, not stored in the class bitmap, but used as flags
+/* pseudo classes below this, not stored in the class bitmap, but used as flags
    during compilation of char classes */
 
-#define ANYOF_VERTWS	(ANYOF_MAX+1)
-#define ANYOF_NVERTWS	(ANYOF_MAX+2)
-#define ANYOF_HORIZWS	(ANYOF_MAX+3)
-#define ANYOF_NHORIZWS	(ANYOF_MAX+4)
+#define ANYOF_VERTWS    ((ANYOF_MAX)+0)
+#define ANYOF_NVERTWS   ((ANYOF_MAX)+1)
+
+#if (ANYOF_VERTWS != (_CC_VERTSPACE) * 2) \
+     || (_CC_VERTSPACE != _HIGHEST_REGCOMP_DOT_H_SYNC)
+#   error Problem with handy.h _CC_VERTSPACE #define
+#endif
+
+#define ANYOF_HORIZWS	((ANYOF_MAX)+2)
+#define ANYOF_NHORIZWS	((ANYOF_MAX)+3)
+
+#define ANYOF_UNIPROP   ((ANYOF_MAX)+4)  /* Used to indicate a Unicode
+                                            property: \p{} or \P{} */
 
 /* Backward source code compatibility. */
 
@@ -437,6 +444,8 @@ struct regnode_charclass_class {
 #define ANYOF_NALNUML	 ANYOF_NALNUM
 #define ANYOF_SPACEL	 ANYOF_SPACE
 #define ANYOF_NSPACEL	 ANYOF_NSPACE
+#define ANYOF_ALNUM ANYOF_WORDCHAR
+#define ANYOF_NALNUM ANYOF_NWORDCHAR
 
 /* Utility macros for the bitmap and classes of ANYOF */
 
@@ -587,10 +596,10 @@ struct reg_data {
 #define check_offset_max substrs->data[2].max_offset
 #define check_end_shift substrs->data[2].end_shift
 
-#define RX_ANCHORED_SUBSTR(rx)	(((struct regexp *)SvANY(rx))->anchored_substr)
-#define RX_ANCHORED_UTF8(rx)	(((struct regexp *)SvANY(rx))->anchored_utf8)
-#define RX_FLOAT_SUBSTR(rx)	(((struct regexp *)SvANY(rx))->float_substr)
-#define RX_FLOAT_UTF8(rx)	(((struct regexp *)SvANY(rx))->float_utf8)
+#define RX_ANCHORED_SUBSTR(rx)	(ReANY(rx)->anchored_substr)
+#define RX_ANCHORED_UTF8(rx)	(ReANY(rx)->anchored_utf8)
+#define RX_FLOAT_SUBSTR(rx)	(ReANY(rx)->float_substr)
+#define RX_FLOAT_UTF8(rx)	(ReANY(rx)->float_utf8)
 
 /* trie related stuff */
 

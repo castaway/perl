@@ -381,6 +381,12 @@ extra paren, e.g. "if (a && (b = c)) ..."
 
 "if (!foo) ..." rather than "if (foo == FALSE) ..." etc.
 
+=item *
+
+Do not declare variables using "register".  It may be counterproductive
+with modern compilers, and is deprecated in C++, under which the Perl
+source is regularly compiled.
+
 =back
 
 =head3 Test suite
@@ -712,6 +718,9 @@ tested.
 
 Now that basic require() and subroutines are tested, you can use the
 F<t/test.pl> library.
+
+Note, however, that some test scripts still avoid F<t/test.pl> if they test
+features that F<t/test.pl> relies on heavily. 
 
 You can also use certain libraries like Config conditionally, but be
 sure to skip the test gracefully if it's not there.

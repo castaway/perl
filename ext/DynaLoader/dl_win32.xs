@@ -67,9 +67,9 @@ dl_private_init(pTHX)
 static int
 dl_static_linked(char *filename)
 {
-    char **p;
+    const char * const *p;
     char *ptr, *hptr;
-    static char subStr[] = "/auto/";
+    static const char subStr[] = "/auto/";
     char szBuffer[MAX_PATH];
 
     /* avoid buffer overflow when called with invalid filenames */

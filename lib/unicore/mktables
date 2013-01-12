@@ -1021,7 +1021,7 @@ if ($v_version ge v4.1.0) {
     $why_suppressed{'Script=Katakana_Or_Hiragana'} = 'Obsolete.  All code points previously matched by this have been moved to "Script=Common".';
 }
 if ($v_version ge v6.0.0) {
-    $why_suppressed{'Script=Katakana_Or_Hiragana'} .= '  Consider instead using "Script_Extensions=Katakana" or "Script_Extensions=Hiragana (or both)"';
+    $why_suppressed{'Script=Katakana_Or_Hiragana'} .= '  Consider instead using "Script_Extensions=Katakana" or "Script_Extensions=Hiragana" (or both)';
     $why_suppressed{'Script_Extensions=Katakana_Or_Hiragana'} = 'All code points that would be matched by this are matched by either "Script_Extensions=Katakana" or "Script_Extensions=Hiragana"';
 }
 
@@ -1078,7 +1078,7 @@ END
 # The input files don't list every code point.  Those not listed are to be
 # defaulted to some value.  Below are hard-coded what those values are for
 # non-binary properties as of 5.1.  Starting in 5.0, there are
-# machine-parsable comment lines in the files the give the defaults; so this
+# machine-parsable comment lines in the files that give the defaults; so this
 # list shouldn't have to be extended.  The claim is that all missing entries
 # for binary properties will default to 'N'.  Unicode tried to change that in
 # 5.2, but the beta period produced enough protest that they backed off.
@@ -1149,6 +1149,8 @@ my %ignored_files = (
     'ReadMe.txt' => 'Documentation',
     'StandardizedVariants.txt' => 'Certain glyph variations for character display are standardized.  This lists the non-Unihan ones; the Unihan ones are also not used by Perl, and are in a separate Unicode data base L<http://www.unicode.org/ivd>',
     'EmojiSources.txt' => 'Maps certain Unicode code points to their legacy Japanese cell-phone values',
+    'USourceData.txt' => 'Documentation of status and cross reference of proposals for encoding by Unicode of Unihan characters',
+    'USourceData.pdf' => 'Documentation of status and cross reference of proposals for encoding by Unicode of Unihan characters',
     'auxiliary/WordBreakTest.html' => 'Documentation of validation tests',
     'auxiliary/SentenceBreakTest.html' => 'Documentation of validation tests',
     'auxiliary/GraphemeBreakTest.html' => 'Documentation of validation tests',
@@ -11485,7 +11487,6 @@ sub filter_old_style_case_folding {
     # Create the map for simple only if are going to output it, for otherwise
     # it takes no part in anything we do.
     my $to_output_simple;
-    my $non_final_folds;
     my $all_folds;
 
     sub setup_case_folding($) {
@@ -11499,16 +11500,6 @@ sub filter_old_style_case_folding {
             property_ref('Case_Folding')->set_proxy_for('Simple_Case_Folding');
         }
 
-        $non_final_folds = $perl->add_match_table("_Perl_Non_Final_Folds",
-                           Perl_Extension => 1,
-                           Fate => $INTERNAL_ONLY,
-                           Description => "Code points that particpate in a multi-char fold and are not the final character of said fold",
-                           );
-        $non_final_folds->add_comment(<<END
-Note that this is not a closure.  'f' is in the list, but not things that fold
-singly to 'f', namely 'F'
-END
-        );
         $all_folds = $perl->add_match_table("_Perl_Any_Folds",
                            Perl_Extension => 1,
                            Fate => $INTERNAL_ONLY,
@@ -11565,7 +11556,8 @@ END
         # so that _swash_inversion_hash() is able to construct closures
         # without having to worry about F mappings.
         if ($type eq 'C' || $type eq 'F' || $type eq 'I' || $type eq 'S') {
-            $all_folds->add_range(hex $range, hex $range);  # Assumes range is single
+            my $from = hex $range;  # Assumes range is single
+            $all_folds->add_range($from, $from);
             $_ = "$range; Case_Folding; "
                  . "$CMD_DELIM$REPLACE_CMD=$MULTIPLE_BEFORE$CMD_DELIM$map";
 
@@ -11573,7 +11565,6 @@ END
                 my @string = split " ", $map;
                 for my $i (0 .. @string  - 1 -1) {
                     my $decimal = hex $string[$i];
-                    $non_final_folds->add_range($decimal, $decimal);
                     $all_folds->add_range($decimal, $decimal);
                 }
             }
@@ -13222,7 +13213,7 @@ sub compile_perl() {
                 Initialize => $Blank + $VertSpace,
     );
     $Space->add_alias('XPosixSpace');
-    $perl->add_match_table("PosixSpace",
+    my $posix_space = $perl->add_match_table("PosixSpace",
                             Description => "\\t, \\n, \\cK, \\f, \\r, and ' '.  (\\cK is vertical tab)",
                             Initialize => $Space & $ASCII,
                             );
@@ -13489,6 +13480,23 @@ sub compile_perl() {
 
     $perl_xidc &= $Word;
 
+    my $charname_begin = $perl->add_match_table('_Perl_Charname_Begin',
+                    Perl_Extension => 1,
+                    Fate => $INTERNAL_ONLY,
+                    Initialize => $gc->table('Letter') & $Alpha & $perl_xids,
+                    );
+
+    my $charname_continue = $perl->add_match_table('_Perl_Charname_Continue',
+                        Perl_Extension => 1,
+                        Fate => $INTERNAL_ONLY,
+                        Initialize => $perl_xidc
+                                    + 0x0020        # SPACE
+                                    + 0x0028        # (
+                                    + 0x0029        # )
+                                    + 0x002D        # -
+                                    + 0x00A0        # NBSP
+                        );
+
     # These two tables are for matching \X, which is based on the 'extended'
     # grapheme cluster, which came in 5.1; create empty ones if not already
     # present.  The straight 'grapheme cluster' (non-extended) is used prior
@@ -13690,8 +13698,9 @@ END
     }
 
     # Now that have everything added, add in abbreviations after
-    # everything else.
-    foreach my $value (keys %abbreviations) {
+    # everything else.  Sort so results don't change between runs of this
+    # program
+    foreach my $value (sort keys %abbreviations) {
         $perl_charname->add_duplicate($abbreviations{$value}, $value,
                                         Replace => $MULTIPLE_AFTER);
     }
@@ -15336,7 +15345,7 @@ the left brace completely changes the meaning of the construct, from "match"
 (for C<\\p{}>) to "doesn't match" (for C<\\P{}>).  Casing in this document is
 for improved legibility.
 
-Also, white space, hyphens, and underscores are also normally ignored
+Also, white space, hyphens, and underscores are normally ignored
 everywhere between the {braces}, and hence can be freely added or removed
 even if the C</x> modifier hasn't been specified on the regular expression.
 But $a_bold_stricter at the beginning of an entry in the table below
@@ -16082,6 +16091,8 @@ sub make_UCD () {
             }
         }
     }
+    @suppressed = sort @suppressed; # So doesn't change between runs of this
+                                    # program
 
     # Convert the structure below (designed for Name.pm) to a form that UCD
     # wants, so it doesn't have to modify it at all; i.e. so that it includes
@@ -16232,17 +16243,19 @@ sub write_all_tables() {
 
     # For each property ...
     # (sort so that if there is an immutable file name, it has precedence, so
-    # some other property can't come in and take over its file name.  If b's
-    # file name is defined, will return 1, meaning to take it first; don't
-    # care if both defined, as they had better be different anyway.  And the
-    # property named 'Perl' needs to be first (it doesn't have any immutable
-    # file name) because empty properties are defined in terms of it's table
-    # named 'Any'.)
+    # some other property can't come in and take over its file name.  (We
+    # don't care if both defined, as they had better be different anyway.)
+    # The property named 'Perl' needs to be first (it doesn't have any
+    # immutable file name) because empty properties are defined in terms of
+    # it's table named 'Any'.)   We also sort by the property's name.  This is
+    # just for repeatability of the outputs between runs of this program, but
+    # does not affect correctness.
     PROPERTY:
-    foreach my $property (sort { return -1 if $a == $perl;
-                                 return 1 if $b == $perl;
-                                 return defined $b->file
-                                } property_ref('*'))
+    foreach my $property ($perl,
+                          sort { return -1 if defined $a->file;
+                                 return 1 if defined $b->file;
+                                 return $a->name cmp $b->name;
+                                } grep { $_ != $perl } property_ref('*'))
     {
         my $type = $property->type;
 
@@ -16971,8 +16984,10 @@ sub make_property_test_script() {
     # or multiple lines. main::write doesn't count the lines.
     my @output;
 
-    foreach my $property (property_ref('*')) {
-        foreach my $table ($property->tables) {
+    # Sort these so get results in same order on different runs of this
+    # program
+    foreach my $property (sort { $a->name cmp $b->name } property_ref('*')) {
+        foreach my $table (sort { $a->name cmp $b->name } $property->tables) {
 
             # Find code points that match, and don't match this table.
             my $valid = $table->get_valid_code_point;

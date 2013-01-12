@@ -13,17 +13,16 @@ BEGIN {
 }
 
 use File::Path;
+use File::Spec;
 
 my $tempdir = tempfile;
 
 mkdir $tempdir, 0700 or die "Can't mkdir '$tempdir': $!";
-chdir $tempdir or die die "Can't chdir '$tempdir': $!";
 unshift @INC, '../../lib';
 my $cleanup = 1;
 
 END {
     if ($cleanup) {
-	chdir '..' or die "Couldn't chdir .. for cleanup: $!";
 	rmtree($tempdir);
     }
 }
@@ -31,16 +30,17 @@ END {
 plan tests => 4;
 
 {
-    local %ENV = %ENV;
-    $ENV{PERL_XMLDUMP} = "withoutT.xml";
+    delete local $ENV{$_} for keys %ENV;
+    my $fn = File::Spec->catfile(File::Spec->curdir(), "withoutT.xml");
+    $ENV{PERL_XMLDUMP} = $fn;
     fresh_perl_is('print q/hello/', '', {}, 'mad without -T');
-    ok(-f "withoutT.xml", "xml file created without -T as expected");
+    ok(-f $fn, "xml file created without -T as expected");
 }
 
 {
-    local %ENV = %ENV;
-    $ENV{PERL_XMLDUMP} = "withT.xml";
+    delete local $ENV{$_} for keys %ENV;
+    my $fn = File::Spec->catfile(File::Spec->curdir(), "withT.xml");
     fresh_perl_is('print q/hello/', 'hello', { switches => [ "-T" ] },
 		  'mad with -T');
-    ok(!-e "withT.xml", "no xml file created with -T as expected");
+    ok(!-e $fn, "no xml file created with -T as expected");
 }

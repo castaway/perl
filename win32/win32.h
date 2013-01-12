@@ -13,6 +13,38 @@
 #  define _WIN32_WINNT 0x0500     /* needed for CreateHardlink() etc. */
 #endif
 
+#ifdef PERL_IS_MINIPERL
+/* this macro will remove Winsock only on miniperl, PERL_IMPLICIT_SYS and
+ * makedef.pl create dependencies that will keep Winsock linked in even with
+ * this macro defined, even though sockets will be umimplemented from a script
+ * level in full perl
+ */
+#  define WIN32_NO_SOCKETS
+#endif
+
+#ifdef WIN32_NO_SOCKETS
+#  undef HAS_SOCKET
+#  undef HAS_GETPROTOBYNAME
+#  undef HAS_GETPROTOBYNUMBER
+#  undef HAS_GETPROTOENT
+#  undef HAS_GETNETBYNAME
+#  undef HAS_GETNETBYADDR
+#  undef HAS_GETNETENT
+#  undef HAS_GETSERVBYNAME
+#  undef HAS_GETSERVBYPORT
+#  undef HAS_GETSERVENT
+#  undef HAS_GETHOSTBYNAME
+#  undef HAS_GETHOSTBYADDR
+#  undef HAS_GETHOSTENT
+#  undef HAS_SELECT
+#  undef HAS_IOCTL
+#  undef HAS_NTOHL
+#  undef HAS_HTONL
+#  undef HAS_HTONS
+#  undef HAS_NTOHS
+#  define WIN32SCK_IS_STDSCK
+#endif
+
 #if defined(PERL_IMPLICIT_SYS)
 #  define DYNAMIC_ENV_FETCH
 #  define HAS_GETENV_LEN
@@ -46,11 +78,15 @@
  */
 
 /* now even GCC supports __declspec() */
-
-#if defined(PERLDLL)
-#define DllExport __declspec(dllexport)
+/* miniperl has no reason to export anything */
+#if defined(PERL_IS_MINIPERL) && !defined(UNDER_CE) && defined(_MSC_VER)
+#  define DllExport
 #else
-#define DllExport __declspec(dllimport)
+#  if defined(PERLDLL)
+#    define DllExport __declspec(dllexport)
+#  else
+#    define DllExport __declspec(dllimport)
+#  endif
 #endif
 
 /* The Perl APIs can only be called directly inside the perl5xx.dll.
@@ -78,6 +114,11 @@
 #  ifdef _MSC_VER
 #    define PERL_CALLCONV_NO_RET __declspec(noreturn)
 #  endif
+#endif
+
+#ifdef _MSC_VER
+#  define PERL_STATIC_NO_RET __declspec(noreturn) static
+#  define PERL_STATIC_INLINE_NO_RET __declspec(noreturn) PERL_STATIC_INLINE
 #endif
 
 #define  WIN32_LEAN_AND_MEAN
@@ -156,13 +197,11 @@ struct utsname {
 #define  DOSISH		1		/* no escaping our roots */
 #define  OP_BINARY	O_BINARY	/* mistake in in pp_sys.c? */
 
-/* Define USE_SOCKETS_AS_HANDLES to enable emulation of windows sockets as
- * real filehandles. XXX Should always be defined (the other version is untested) */
-#define USE_SOCKETS_AS_HANDLES
-
 /* read() and write() aren't transparent for socket handles */
-#define PERL_SOCK_SYSREAD_IS_RECV
-#define PERL_SOCK_SYSWRITE_IS_SEND
+#ifndef WIN32_NO_SOCKETS
+#  define PERL_SOCK_SYSREAD_IS_RECV
+#  define PERL_SOCK_SYSWRITE_IS_SEND
+#endif
 
 #define PERL_NO_FORCE_LINK		/* no need for PL_force_link_funcs */
 
@@ -265,6 +304,7 @@ START_EXTERN_C
 
 /* For UNIX compatibility. */
 
+#ifdef PERL_CORE
 extern  uid_t	getuid(void);
 extern  gid_t	getgid(void);
 extern  uid_t	geteuid(void);
@@ -280,6 +320,7 @@ extern  void	*sbrk(ptrdiff_t need);
 extern	char *	getlogin(void);
 extern	int	chown(const char *p, uid_t o, gid_t g);
 extern  int	mkstemp(const char *path);
+#endif
 
 #undef	 Stat
 #define  Stat		win32_stat
@@ -319,9 +360,6 @@ typedef struct {
 DllExport void		win32_get_child_IO(child_IO_table* ptr);
 DllExport HWND		win32_create_message_window(void);
 
-#ifndef USE_SOCKETS_AS_HANDLES
-extern FILE *		my_fdopen(int, char *);
-#endif
 extern int		my_fclose(FILE *);
 extern char *		win32_get_privlib(const char *pl, STRLEN *const len);
 extern char *		win32_get_sitelib(const char *pl, STRLEN *const len);
@@ -331,7 +369,7 @@ extern char *		win32_get_vendorlib(const char *pl, STRLEN *const len);
 extern void		win32_delete_internal_host(void *h);
 #endif
 
-extern char *		staticlinkmodules[];
+extern const char * const		staticlinkmodules[];
 
 END_EXTERN_C
 
@@ -374,9 +412,7 @@ struct thread_intern {
     char		Wstrerror_buffer[512];
     struct servent	Wservent;
     char		Wgetlogin_buffer[128];
-#    ifdef USE_SOCKETS_AS_HANDLES
     int			Winit_socktype;
-#    endif
     char		Wcrypt_buffer[30];
 #    ifdef USE_RTL_THREAD_API
     void *		retv;	/* slot for thread return value */

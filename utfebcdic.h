@@ -562,20 +562,34 @@ END_EXTERN_C
 		      (uv) < 0x400000       ? 5 : \
 		      (uv) < 0x4000000      ? 6 : 7 )
 
-
 #define UNI_IS_INVARIANT(c)		((c) <  0xA0)
+
 /* UTF-EBCDIC semantic macros - transform back into I8 and then compare */
 
 #define UTF8_IS_START(c)		(NATIVE_TO_UTF(c) >= 0xC5 && NATIVE_TO_UTF(c) != 0xE0)
 #define UTF8_IS_CONTINUATION(c)		((NATIVE_TO_UTF(c) & 0xE0) == 0xA0)
 #define UTF8_IS_CONTINUED(c) 		(NATIVE_TO_UTF(c) >= 0xA0)
 #define UTF8_IS_DOWNGRADEABLE_START(c)	(NATIVE_TO_UTF(c) >= 0xC5 && NATIVE_TO_UTF(c) <= 0xC7)
+#define UTF8_IS_ABOVE_LATIN1(c)	(NATIVE_TO_I8(c) >= 0xC8)
 
 #define UTF_START_MARK(len) (((len) >  7) ? 0xFF : ((U8)(0xFE << (7-(len)))))
 #define UTF_START_MASK(len) (((len) >= 6) ? 0x01 : (0x1F >> ((len)-2)))
 #define UTF_CONTINUATION_MARK		0xA0
 #define UTF_CONTINUATION_MASK		((U8)0x1f)
 #define UTF_ACCUMULATION_SHIFT		5
+
+/* How wide can a single UTF-8 encoded character become in bytes. */
+/* NOTE: Strictly speaking Perl's UTF-8 should not be called UTF-8 since UTF-8
+ * is an encoding of Unicode, and Unicode's upper limit, 0x10FFFF, can be
+ * expressed with 5 bytes.  However, Perl thinks of UTF-8 as a way to encode
+ * non-negative integers in a binary format, even those above Unicode */
+#define UTF8_MAXBYTES 7
+
+/* The maximum number of UTF-8 bytes a single Unicode character can
+ * uppercase/lowercase/fold into.  Unicode guarantees that the maximum
+ * expansion is 3 characters.  On EBCDIC platforms, the highest Unicode
+ * character occupies 5 bytes, therefore this number is 15 */
+#define UTF8_MAXBYTES_CASE	15
 
 /*
  * Local variables:

@@ -1,3 +1,34 @@
+Version 3.63 Nov 12, 2012
+
+    [SECURITY]
+    - CR escaping for Set-Cookie and P3P headers was improved. There was potential
+      for newline injection in these headers. 
+      (Thanks to anazawa, https://github.com/markstos/CGI.pm/pull/23)
+
+Version 3.62, Nov 9th, 2012
+
+    [INTERNALS]
+    - Changed how the  deprecated endform function was defined for compatibilty
+      with the development version of Perl. 
+    - Fix failures in t/tmpdir.t when run as root
+      https://github.com/markstos/CGI.pm/issues/22, RT#80659)
+
+    - Made it possible to force a sorted order for things like hash
+      attributes so that tests are not dependent on a particular hash
+      ordering. This will be required in modern perls which will
+      change the ordering per process. (Yves, RT#80659)
+
+Version 3.61 Nov 2nd, 2012
+
+  (No code changes)
+
+  [INTERNALS]
+   - formatting of CGI::Carp documentation was improved. Thanks to benkasminbullock.
+   - un-TODO some tests in t/tmpdir.t that were passing in most cases. 
+     More on this:
+       https://github.com/markstos/CGI.pm/issues/19#
+       https://github.com/markstos/CGI.pm/commit/cc73dc9807b0fabb56b3cdf1a9726588b2eda0f7
+
 Version 3.60 Aug 15th, 2012
 
   [BUG FIXES]  

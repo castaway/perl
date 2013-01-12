@@ -3,7 +3,7 @@ use strict;
 use vars qw/$VERSION %released %version %families %upstream
 	    %bug_tracker %deprecated/;
 use Module::CoreList::TieHashDelta;
-$VERSION = '2.73';
+$VERSION = '2.79';
 
 my $dumpinc = 0;
 sub import {
@@ -76,6 +76,17 @@ sub is_deprecated {
     $perl_version ||= $];
     return unless $module && exists $deprecated{$perl_version}{$module};
     return $deprecated{$perl_version}{$module};
+}
+
+sub deprecated_in {
+    my $module = shift;
+    $module = shift if eval { $module->isa(__PACKAGE__) }
+      and scalar @_ and $_[0] =~ m#\A[a-zA-Z_][0-9a-zA-Z_]*(?:(::|')[0-9a-zA-Z_]+)*\z#;
+    return unless $module;
+    my @perls = grep { exists $deprecated{$_}{$module} } keys %deprecated;
+    return unless @perls;
+    require List::Util;
+    return List::Util::minstr(@perls);
 }
 
 sub removed_from {
@@ -188,6 +199,7 @@ sub changes_between {
     5.013011 => '2011-03-20',
     5.014000 => '2011-05-14',
     5.012004 => '2011-06-20',
+    5.012005 => '2012-11-10',
     5.014001 => '2011-06-16',
     5.015000 => '2011-06-20',
     5.015001 => '2011-07-20',
@@ -202,10 +214,15 @@ sub changes_between {
     5.015009 => '2012-03-20',
     5.016000 => '2012-05-20',
     5.016001 => '2012-08-08',
+    5.016002 => '2012-11-01',
     5.017000 => '2012-05-26',
     5.017001 => '2012-06-20',
     5.017002 => '2012-07-20',
     5.017003 => '2012-08-20',
+    5.017004 => '2012-09-20',
+    5.014003 => '2012-10-12',
+    5.017005 => '2012-10-20',
+    5.017006 => '2012-11-20',
   );
 
 for my $version ( sort { $a <=> $b } keys %released ) {
@@ -538,6 +555,7 @@ my %delta = (
             'CPAN::FirstTime'       => '1.29 ',
             'DB_File'               => '1.60',
             'Data::Dumper'          => '2.09',
+            'Errno'                 => '1.09',
             'ExtUtils::Installed'   => '0.02',
             'ExtUtils::MM_Unix'     => '1.12601 ',
             'ExtUtils::MakeMaker'   => '5.4301',
@@ -586,6 +604,7 @@ my %delta = (
             'DB_File'               => '1.65',
             'Data::Dumper'          => '2.101',
             'Dumpvalue'             => undef,
+            'Errno'                 => '1.111',
             'ExtUtils::Install'     => '1.28',
             'ExtUtils::Liblist'     => '1.25',
             'ExtUtils::MM_Unix'     => '1.12602',
@@ -611,7 +630,6 @@ my %delta = (
         changed => {
             'CPAN::FirstTime'       => '1.36 ',
             'DB_File'               => '1.807',
-            'Errno'                 => '1.111',
             'ExtUtils::Install'     => '1.28 ',
             'ExtUtils::Liblist'     => '1.25 ',
             'ExtUtils::MM_Unix'     => '1.12602 ',
@@ -1157,7 +1175,6 @@ my %delta = (
             'warnings::register'    => '1.00',
         },
         removed => {
-            'Errno'                 => 1,
         }
     },
     5.008 => {
@@ -4341,6 +4358,19 @@ my %delta = (
         removed => {
         }
     },
+    5.012005 => {
+        delta_from => 5.012004,
+        changed => {
+            'B::Concise'            => '0.78_01',
+            'Encode'                => '2.39_01',
+            'File::Glob'            => '1.07_01',
+            'Module::CoreList'      => '2.50_02',
+            'Unicode::UCD'          => '0.29',
+            'charnames'             => '1.07_01',
+        },
+        removed => {
+        }
+    },
     5.013 => {
         delta_from => 5.012,
         changed => {
@@ -5564,6 +5594,16 @@ my %delta = (
         removed => {
         }
     },
+    5.014003 => {
+        delta_from => 5.014002,
+        changed => {
+            'Digest'                => '1.16_01',
+            'IPC::Open3'            => '1.09_01',
+            'Module::CoreList'      => '2.49_04',
+        },
+        removed => {
+        }
+    },
     5.015 => {
         delta_from => 5.014001,
         changed => {
@@ -6710,6 +6750,13 @@ my %delta = (
         removed => {
         }
     },
+    5.016002 => {
+        delta_from => 5.016001,
+        changed => {
+        },
+        removed => {
+        }
+    },
     5.017 => {
         delta_from => 5.016,
         changed => {
@@ -7152,6 +7199,208 @@ my %delta = (
         removed => {
         }
     },
+    5.017004 => {
+        delta_from => 5.017003,
+        changed => {
+            'Archive::Tar'          => '1.90',
+            'Archive::Tar::Constant'=> '1.90',
+            'Archive::Tar::File'    => '1.90',
+            'B'                     => '1.38',
+            'B::Concise'            => '0.93',
+            'B::Deparse'            => '1.17',
+            'B::Xref'               => '1.04',
+            'CPANPLUS'              => '0.9131',
+            'CPANPLUS::Internals'   => '0.9131',
+            'CPANPLUS::Shell::Default'=> '0.9131',
+            'DB_File'               => '1.827',
+            'Devel::Peek'           => '1.10',
+            'DynaLoader'            => '1.16',
+            'Errno'                 => '1.16',
+            'ExtUtils::ParseXS'     => '3.18',
+            'ExtUtils::ParseXS::Constants'=> '3.18',
+            'ExtUtils::ParseXS::CountLines'=> '3.18',
+            'ExtUtils::ParseXS::Utilities'=> '3.18',
+            'File::Copy'            => '2.24',
+            'File::Find'            => '1.22',
+            'IPC::Open3'            => '1.13',
+            'Locale::Codes'         => '3.23',
+            'Locale::Codes::Constants'=> '3.23',
+            'Locale::Codes::Country'=> '3.23',
+            'Locale::Codes::Country_Codes'=> '3.23',
+            'Locale::Codes::Country_Retired'=> '3.23',
+            'Locale::Codes::Currency'=> '3.23',
+            'Locale::Codes::Currency_Codes'=> '3.23',
+            'Locale::Codes::Currency_Retired'=> '3.23',
+            'Locale::Codes::LangExt'=> '3.23',
+            'Locale::Codes::LangExt_Codes'=> '3.23',
+            'Locale::Codes::LangExt_Retired'=> '3.23',
+            'Locale::Codes::LangFam'=> '3.23',
+            'Locale::Codes::LangFam_Codes'=> '3.23',
+            'Locale::Codes::LangFam_Retired'=> '3.23',
+            'Locale::Codes::LangVar'=> '3.23',
+            'Locale::Codes::LangVar_Codes'=> '3.23',
+            'Locale::Codes::LangVar_Retired'=> '3.23',
+            'Locale::Codes::Language'=> '3.23',
+            'Locale::Codes::Language_Codes'=> '3.23',
+            'Locale::Codes::Language_Retired'=> '3.23',
+            'Locale::Codes::Script' => '3.23',
+            'Locale::Codes::Script_Codes'=> '3.23',
+            'Locale::Codes::Script_Retired'=> '3.23',
+            'Locale::Country'       => '3.23',
+            'Locale::Currency'      => '3.23',
+            'Locale::Language'      => '3.23',
+            'Locale::Script'        => '3.23',
+            'Math::BigFloat::Trace' => '0.30',
+            'Math::BigInt::Trace'   => '0.30',
+            'Module::CoreList'      => '2.73',
+            'Module::CoreList::TieHashDelta'=> '2.73',
+            'Opcode'                => '1.24',
+            'Socket'                => '2.006',
+            'Storable'              => '2.39',
+            'Sys::Syslog'           => '0.32',
+            'Unicode::UCD'          => '0.46',
+            'XS::APItest'           => '0.43',
+            'bignum'                => '0.30',
+            'bigrat'                => '0.30',
+            'constant'              => '1.24',
+            'feature'               => '1.30',
+            'threads::shared'       => '1.41',
+            'version'               => '0.9901',
+            'warnings'              => '1.14',
+        },
+        removed => {
+        }
+    },
+    5.017005 => {
+        delta_from => 5.017004,
+        changed => {
+            'AutoLoader'            => '5.73',
+            'B'                     => '1.39',
+            'B::Deparse'            => '1.18',
+            'CPANPLUS'              => '0.9133',
+            'CPANPLUS::Internals'   => '0.9133',
+            'CPANPLUS::Shell::Default'=> '0.9133',
+            'Carp'                  => '1.27',
+            'Carp::Heavy'           => '1.27',
+            'Data::Dumper'          => '2.136',
+            'Digest::SHA'           => '5.72',
+            'ExtUtils::CBuilder'    => '0.280209',
+            'ExtUtils::CBuilder::Base'=> '0.280209',
+            'ExtUtils::CBuilder::Platform::Unix'=> '0.280209',
+            'ExtUtils::CBuilder::Platform::VMS'=> '0.280209',
+            'ExtUtils::CBuilder::Platform::Windows'=> '0.280209',
+            'ExtUtils::CBuilder::Platform::Windows::BCC'=> '0.280209',
+            'ExtUtils::CBuilder::Platform::Windows::GCC'=> '0.280209',
+            'ExtUtils::CBuilder::Platform::Windows::MSVC'=> '0.280209',
+            'ExtUtils::CBuilder::Platform::aix'=> '0.280209',
+            'ExtUtils::CBuilder::Platform::cygwin'=> '0.280209',
+            'ExtUtils::CBuilder::Platform::darwin'=> '0.280209',
+            'ExtUtils::CBuilder::Platform::dec_osf'=> '0.280209',
+            'ExtUtils::CBuilder::Platform::os2'=> '0.280209',
+            'File::Copy'            => '2.25',
+            'File::Glob'            => '1.18',
+            'HTTP::Tiny'            => '0.024',
+            'Module::CoreList'      => '2.75',
+            'Module::CoreList::TieHashDelta'=> '2.75',
+            'PerlIO::encoding'      => '0.16',
+            'Unicode::Collate'      => '0.90',
+            'Unicode::Collate::Locale'=> '0.90',
+            'Unicode::Normalize'    => '1.15',
+            'Win32CORE'             => '0.04',
+            'XS::APItest'           => '0.44',
+            'attributes'            => '0.21',
+            'bigint'                => '0.31',
+            'bignum'                => '0.31',
+            'bigrat'                => '0.31',
+            'feature'               => '1.31',
+            'threads::shared'       => '1.42',
+            'warnings'              => '1.15',
+        },
+        removed => {
+        }
+    },
+    5.017006 => {
+        delta_from => 5.017005,
+        changed => {
+            'B'                     => '1.40',
+            'B::Concise'            => '0.94',
+            'B::Deparse'            => '1.19',
+            'B::Xref'               => '1.05',
+            'CGI'                   => '3.63',
+            'CGI::Util'             => '3.62',
+            'CPAN'                  => '1.99_51',
+            'CPANPLUS::Dist::Build' => '0.64',
+            'CPANPLUS::Dist::Build::Constants'=> '0.64',
+            'Carp'                  => '1.28',
+            'Carp::Heavy'           => '1.28',
+            'Compress::Raw::Bzip2'  => '2.058',
+            'Compress::Raw::Zlib'   => '2.058',
+            'Compress::Zlib'        => '2.058',
+            'Data::Dumper'          => '2.137',
+            'Digest::SHA'           => '5.73',
+            'DynaLoader'            => '1.17',
+            'Env'                   => '1.04',
+            'Errno'                 => '1.17',
+            'ExtUtils::Manifest'    => '1.62',
+            'ExtUtils::Typemaps'    => '3.18',
+            'ExtUtils::Typemaps::Cmd'=> '3.18',
+            'ExtUtils::Typemaps::InputMap'=> '3.18',
+            'ExtUtils::Typemaps::OutputMap'=> '3.18',
+            'ExtUtils::Typemaps::Type'=> '3.18',
+            'Fatal'                 => '2.13',
+            'File::Find'            => '1.23',
+            'Hash::Util'            => '0.13',
+            'IO::Compress::Adapter::Bzip2'=> '2.058',
+            'IO::Compress::Adapter::Deflate'=> '2.058',
+            'IO::Compress::Adapter::Identity'=> '2.058',
+            'IO::Compress::Base'    => '2.058',
+            'IO::Compress::Base::Common'=> '2.058',
+            'IO::Compress::Bzip2'   => '2.058',
+            'IO::Compress::Deflate' => '2.058',
+            'IO::Compress::Gzip'    => '2.058',
+            'IO::Compress::Gzip::Constants'=> '2.058',
+            'IO::Compress::RawDeflate'=> '2.058',
+            'IO::Compress::Zip'     => '2.058',
+            'IO::Compress::Zip::Constants'=> '2.058',
+            'IO::Compress::Zlib::Constants'=> '2.058',
+            'IO::Compress::Zlib::Extra'=> '2.058',
+            'IO::Uncompress::Adapter::Bunzip2'=> '2.058',
+            'IO::Uncompress::Adapter::Identity'=> '2.058',
+            'IO::Uncompress::Adapter::Inflate'=> '2.058',
+            'IO::Uncompress::AnyInflate'=> '2.058',
+            'IO::Uncompress::AnyUncompress'=> '2.058',
+            'IO::Uncompress::Base'  => '2.058',
+            'IO::Uncompress::Bunzip2'=> '2.058',
+            'IO::Uncompress::Gunzip'=> '2.058',
+            'IO::Uncompress::Inflate'=> '2.058',
+            'IO::Uncompress::RawInflate'=> '2.058',
+            'IO::Uncompress::Unzip' => '2.058',
+            'Module::CoreList'      => '2.78',
+            'Module::CoreList::TieHashDelta'=> '2.77',
+            'Module::Pluggable'     => '4.5',
+            'Module::Pluggable::Object'=> '4.5',
+            'Opcode'                => '1.25',
+            'Sys::Hostname'         => '1.17',
+            'Term::UI'              => '0.32',
+            'Thread::Queue'         => '3.01',
+            'Tie::Hash::NamedCapture'=> '0.09',
+            'Unicode::Collate'      => '0.93',
+            'Unicode::Collate::CJK::Korean'=> '0.93',
+            'Unicode::Collate::Locale'=> '0.93',
+            'Unicode::Normalize'    => '1.16',
+            'Unicode::UCD'          => '0.47',
+            'XS::APItest'           => '0.46',
+            '_charnames'            => '1.33',
+            'autodie'               => '2.13',
+            'autodie::exception'    => '2.13',
+            'autodie::exception::system'=> '2.13',
+            'autodie::hints'        => '2.13',
+            'charnames'             => '1.33',
+            're'                    => '0.23',
+        },
+        removed => {
+        }
+    },
 );
 
 for my $version (sort { $a <=> $b } keys %delta) {
@@ -7271,6 +7520,12 @@ for my $version (sort { $a <=> $b } keys %delta) {
 	'Shell'                 => '1',
 	'Switch'                => '1',
     },
+    5.012005 => {
+	'Class::ISA'            => '1',
+	'Pod::Plainer'          => '1',
+	'Shell'                 => '1',
+	'Switch'                => '1',
+    },
     5.014001 => {
         'Shell'                 => '1',
     },
@@ -7304,6 +7559,8 @@ for my $version (sort { $a <=> $b } keys %delta) {
     },
     5.016001 => {
     },
+    5.016002 => {
+    },
     5.017000 => {
     },
     5.017001 => {
@@ -7311,6 +7568,15 @@ for my $version (sort { $a <=> $b } keys %delta) {
     5.017002 => {
     },
     5.017003 => {
+    },
+    5.017004 => {
+    },
+    5.014003 => {
+	'Shell'                 => '1',
+    },
+    5.017005 => {
+    },
+    5.017006 => {
     },
 );
 
@@ -7835,7 +8101,7 @@ for my $version (sort { $a <=> $b } keys %delta) {
     'Win32API::File'        => 'cpan',
     'Win32API::File::ExtUtils::Myconst2perl'=> 'cpan',
     'Win32CORE'             => undef,
-    'XSLoader'              => 'blead',
+    'XSLoader'              => undef,
     'autodie'               => 'cpan',
     'autodie::exception'    => 'cpan',
     'autodie::exception::system'=> 'cpan',
@@ -8081,7 +8347,7 @@ for my $version (sort { $a <=> $b } keys %delta) {
     'Filter::Simple'        => undef,
     'Filter::Util::Call'    => undef,
     'Getopt::Long'          => undef,
-    'HTTP::Tiny'            => 'http://rt.cpan.org/Public/Dist/Display.html?Name=HTTP-Tiny',
+    'HTTP::Tiny'            => 'https://rt.cpan.org/Public/Dist/Display.html?Name=HTTP-Tiny',
     'IO::Compress::Adapter::Bzip2'=> undef,
     'IO::Compress::Adapter::Deflate'=> undef,
     'IO::Compress::Adapter::Identity'=> undef,
@@ -8371,10 +8637,14 @@ for my $version (sort { $a <=> $b } keys %delta) {
     'Unicode::Collate::Locale'=> undef,
     'Unicode::Normalize'    => undef,
     'Unicode::UCD'          => undef,
+    'VMS::DCLsym'           => undef,
+    'VMS::Filespec'         => undef,
+    'VMS::Stdio'            => undef,
     'Win32'                 => undef,
     'Win32API::File'        => undef,
     'Win32API::File::ExtUtils::Myconst2perl'=> undef,
-    'XSLoader'              => undef,
+    'Win32CORE'             => undef,
+    'XSLoader'              => 'https://rt.perl.org/rt3/Search/Results.html?Query=Queue=\'perl5\' AND Content LIKE \'module=XSLoader\' AND (Status=\'open\' OR Status=\'new\' OR Status=\'stalled\')',
     'autodie'               => 'http://rt.cpan.org/NoAuth/Bugs.html?Dist=autodie',
     'autodie::exception'    => 'http://rt.cpan.org/NoAuth/Bugs.html?Dist=autodie',
     'autodie::exception::system'=> 'http://rt.cpan.org/NoAuth/Bugs.html?Dist=autodie',

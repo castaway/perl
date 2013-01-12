@@ -78,7 +78,7 @@ my $cur_entry;
 open my $diagfh, "<", $pod
   or die "Can't open $pod: $!";
 
-my $category_re = qr/ [a-z0-9_]+?/;      # Note: requires an initial space
+my $category_re = qr/ [a-z0-9_:]+?/;    # Note: requires an initial space
 my $severity_re = qr/ . (?: \| . )* /x; # A severity is a single char, but can
                                         # be of the form 'S|P|W'
 my @same_descr;
@@ -230,7 +230,7 @@ sub check_file {
       $sub = $_;
     }
     next if $sub =~ m/^XS/;
-    if (m</\* diag_listed_as: (.*) \*/>) {
+    if (m</\*\s*diag_listed_as: (.*?)\s*\*/>) {
       $listed_as = $1;
       $listed_as_line = $.+1;
     }
@@ -296,6 +296,7 @@ sub check_file {
                  :                                '[PFX]';
     my $categories;
     if (defined $category) {
+      $category =~ s/__/::/g;
       $categories =
         join ", ",
               sort map {s/^WARN_//; lc $_} split /\s*[|,]\s*/, $category;

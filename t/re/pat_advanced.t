@@ -789,6 +789,12 @@ sub run_tests {
     }
 
     {
+        # The second half of RT #114808
+        warning_is(sub {'aa' =~ /.+\x{100}/}, undef,
+                   'utf8-only floating substr, non-utf8 target, no warning');
+    }
+
+    {
         my $message = "qr /.../x";
         my $R = qr / A B C # D E/x;
         ok("ABCDE" =~    $R   && $& eq "ABC", $message);
@@ -971,6 +977,9 @@ sub run_tests {
         use Cname;
 
         ok 'fooB'  =~ /\N{foo}[\N{B}\N{b}]/, "Passthrough charname";
+        my $name = "foo\xDF";
+        my $result = eval "'A${name}B'  =~ /^A\\N{$name}B\$/";
+        ok !$@ && $result,  "Passthrough charname of non-ASCII, Latin1";
         #
         # Why doesn't must_warn work here?
         #
@@ -1011,16 +1020,32 @@ sub run_tests {
         eval q [ok "\N{TOO-LONG-STR}" =~ /^\N{TOO-LONG-STR}$/, 'Verify that what once was too long a string works'];
         eval 'q(syntax error) =~ /\N{MALFORMED}/';
         ok $@ && $@ =~ /Malformed/, 'Verify that malformed utf8 gives an error';
-        undef $w;
         eval 'q() =~ /\N{4F}/';
-        ok $w && $w =~ /Deprecated/, 'Verify that leading digit in name gives warning';
-        undef $w;
+        ok $@ && $@ =~ /Invalid character/, 'Verify that leading digit in name gives error';
         eval 'q() =~ /\N{COM,MA}/';
-        ok $w && $w =~ /Deprecated/, 'Verify that comma in name gives warning';
-        undef $w;
-        my $name = "A\x{D7}O";
+        ok $@ && $@ =~ /Invalid character/, 'Verify that comma in name gives error';
+        $name = "A\x{D7}O";
         eval "q(W) =~ /\\N{$name}/";
-        ok $w && $w =~ /Deprecated/, 'Verify that latin1 symbol in name gives warning';
+        ok $@ && $@ =~ /Invalid character/, 'Verify that latin1 symbol in name gives error';
+        my $utf8_name = "7 CITIES OF GOLD";
+        utf8::upgrade($utf8_name);
+        eval "use utf8; q(W) =~ /\\N{$utf8_name}/";
+        ok $@ && $@ =~ /Invalid character/, 'Verify that leading digit in utf8 name gives error';
+        $utf8_name = "SHARP #";
+        utf8::upgrade($utf8_name);
+        eval "use utf8; q(W) =~ /\\N{$utf8_name}/";
+        ok $@ && $@ =~ /Invalid character/, 'Verify that ASCII symbol in utf8 name gives error';
+        $utf8_name = "A HOUSE \xF7 AGAINST ITSELF";
+        utf8::upgrade($utf8_name);
+        eval "use utf8; q(W) =~ /\\N{$utf8_name}/";
+        ok $@ && $@ =~ /Invalid character/, 'Verify that latin1 symbol in utf8 name gives error';
+        $utf8_name = "\x{664} HORSEMEN}";
+        eval "use utf8; q(W) =~ /\\N{$utf8_name}/";
+        ok $@ && $@ =~ /Invalid character/, 'Verify that leading above Latin1 digit in utf8 name gives error';
+        $utf8_name = "A \x{1F4A9} WOULD SMELL AS SWEET}";
+        eval "use utf8; q(W) =~ /\\N{$utf8_name}/";
+        ok $@ && $@ =~ /Invalid character/, 'Verify that above Latin1 symbol in utf8 name gives error';
+
         undef $w;
         $name = "A\x{D1}O";
         eval "q(W) =~ /\\N{$name}/";

@@ -633,7 +633,7 @@ Perl_do_trans(pTHX_ SV *sv)
 
     if (SvREADONLY(sv) && !(PL_op->op_private & OPpTRANS_IDENTICAL)) {
         if (!SvIsCOW(sv))
-            Perl_croak_no_modify(aTHX);
+            Perl_croak_no_modify();
     }
     (void)SvPV_const(sv, len);
     if (!len)
@@ -671,7 +671,7 @@ Perl_do_trans(pTHX_ SV *sv)
 }
 
 void
-Perl_do_join(pTHX_ register SV *sv, SV *delim, register SV **mark, register SV **sp)
+Perl_do_join(pTHX_ SV *sv, SV *delim, SV **mark, SV **sp)
 {
     dVAR;
     SV ** const oldmark = mark;
@@ -707,7 +707,7 @@ Perl_do_join(pTHX_ register SV *sv, SV *delim, register SV **mark, register SV *
     /* sv_setpv retains old UTF8ness [perl #24846] */
     SvUTF8_off(sv);
 
-    if (PL_tainting && SvMAGICAL(sv))
+    if (TAINTING_get && SvMAGICAL(sv))
 	SvTAINTED_off(sv);
 
     if (items-- > 0) {

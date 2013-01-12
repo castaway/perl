@@ -209,7 +209,10 @@ from=''
 run=''
 targetarch=''
 to=''
+sysroot=''
 usecrosscompile=''
+hostperl=''
+hostgenerate=''
 extern_C=''
 mistrustnm=''
 usedevel=''
@@ -1955,6 +1958,29 @@ true)
 	;;
 esac
 
+: Set 'sysroot' to change the logical root directory to your headers and libraries see man gcc
+: This is primarily meant for cross-compile environments, and may fail to be useful in other cases
+
+if test "X$sysroot" != X; then
+  echo "Using $sysroot to find your headers and libraries, adding to ccflags"
+  case "$ccflags" in
+  *sysroot*) ;;
+  'undef'|*)
+       ccflags="$ccflags --sysroot=$sysroot"
+  esac
+  case "$ldflags" in
+  *sysroot*) ;;
+  'undef'|*)
+       ldflags="$ldflags --sysroot=$sysroot"
+  esac
+  case "$cccdlflags" in
+  *sysroot*) ;;
+  'undef'|*)
+       cccdlflags="$cccdlflags --sysroot=$sysroot"
+  esac
+  # lddlflags updated below in lddlflags section
+fi
+
 : Eunice requires " " instead of "", can you believe it
 echo " "
 : Here we go...
@@ -2787,110 +2813,155 @@ esac
 case "$usecrosscompile" in
 $define|true|[yY]*)
 	$echo "Cross-compiling..."
-        croak=''
-    	case "$cc" in
-	*-*-gcc) # A cross-compiling gcc, probably.
+    croak=''
+    case "$cc" in
+	*-*-gcc) # A cross-compiling gcc, probably. Only supporting gcc at the moment.
 	    targetarch=`$echo $cc|$sed 's/-gcc$//'`
+        $echo "Your targetarch is now set to: $targetarch"
 	    ar=$targetarch-ar
 	    # leave out ld, choosing it is more complex
 	    nm=$targetarch-nm
 	    ranlib=$targetarch-ranlib
-	    $echo 'extern int foo;' > try.c
-	    set X `$cc -v -E try.c 2>&1 | $awk '/^#include </,/^End of search /'|$grep '/include'`
-	    shift
+        # if sysroot is set we already have our incpath and libpath discovered, else try to get gcc to tell us
+	    if test "X$sysroot" = X; then
+	        $echo 'extern int foo;' > try.c
+	        set X `$cc -v -E try.c 2>&1 | $awk '/^#include </,/^End of search /'|$grep '/include'`
+	        shift
             if $test $# -gt 0; then
-	        incpth="$incpth $*"
-		incpth="`$echo $incpth|$sed 's/^ //'`"
+	            incpth="$incpth $*"
+		        incpth="`$echo $incpth|$sed 's/^ //'`"
                 echo "Guessing incpth '$incpth'." >&4
                 for i in $*; do
-		    j="`$echo $i|$sed 's,/include$,/lib,'`"
-		    if $test -d $j; then
-			libpth="$libpth $j"
-		    fi
+		            j="`$echo $i|$sed 's,/include$,/lib,'`"
+ 		            if $test -d $j; then
+			            libpth="$libpth $j"
+		            fi
                 done   
-		libpth="`$echo $libpth|$sed 's/^ //'`"
+		        libpth="`$echo $libpth|$sed 's/^ //'`"
                 echo "Guessing libpth '$libpth'." >&4
-	    fi
-	    $rm -f try.c
-	    ;;
+	        fi
+	        $rm -f try.c
+        fi
+        ;;
 	esac
 	case "$targetarch" in
 	'') echo "Targetarch not defined." >&4; croak=y ;;
         *)  echo "Using targetarch $targetarch." >&4 ;;
 	esac
-	case "$incpth" in
-	'') echo "Incpth not defined." >&4; croak=y ;;
-        *)  echo "Using incpth '$incpth'." >&4 ;;
-	esac
-	case "$libpth" in
-	'') echo "Libpth not defined." >&4; croak=y ;;
-        *)  echo "Using libpth '$libpth'." >&4 ;;
-	esac
-	case "$usrinc" in
-	'') for i in $incpth; do
-	        if $test -f $i/errno.h -a -f $i/stdio.h -a -f $i/time.h; then
-		    usrinc=$i
-	            echo "Guessing usrinc $usrinc." >&4
-		    break
-		fi
-	    done
-	    case "$usrinc" in
-	    '') echo "Usrinc not defined." >&4; croak=y ;;
+    if test "X$sysroot" = X; then
+	    case "$incpth" in
+	        '') echo "Incpth not defined." >&4; croak=y ;;
+            *)  echo "Using incpth '$incpth'." >&4 ;;
 	    esac
-            ;;
-        *)  echo "Using usrinc $usrinc." >&4 ;;
-	esac
-	case "$targethost" in
-	'') echo "Targethost not defined." >&4; croak=y ;;
-        *)  echo "Using targethost $targethost." >&4
-	esac
-	locincpth=' '
-	loclibpth=' '
-	case "$croak" in
-	y) echo "Cannot continue, aborting." >&4; exit 1 ;;
-	esac
-	case "$src" in
-	/*) run=$src/Cross/run
-	    targetmkdir=$src/Cross/mkdir
-	    to=$src/Cross/to
-	    from=$src/Cross/from
-	    ;;
-	*)  pwd=`$test -f ../Configure & cd ..; pwd`
-	    run=$pwd/Cross/run
-	    targetmkdir=$pwd/Cross/mkdir
-	    to=$pwd/Cross/to
-	    from=$pwd/Cross/from
-	    ;;
-	esac
-	case "$targetrun" in
-	'') targetrun=ssh ;;
-	esac
-	case "$targetto" in
-	'') targetto=scp ;;
-	esac
-	case "$targetfrom" in
-	'') targetfrom=scp ;;
-	esac
-    	run=$run-$targetrun
-    	to=$to-$targetto
-    	from=$from-$targetfrom
-	case "$targetdir" in
-	'')  targetdir=/tmp
-             echo "Guessing targetdir $targetdir." >&4
-             ;;
-	esac
-	case "$targetuser" in
-	'')  targetuser=root
-             echo "Guessing targetuser $targetuser." >&4
-             ;;
-	esac
-	case "$targetfrom" in
-	scp)	q=-q ;;
-	*)	q='' ;;
-	esac
-	case "$targetrun" in
-	ssh|rsh)
-	    cat >$run <<EOF
+	    case "$libpth" in
+	        '') echo "Libpth not defined." >&4; croak=y ;;
+            *)  echo "Using libpth '$libpth'." >&4 ;;
+	    esac
+	    case "$usrinc" in
+	        '') for i in $incpth; do
+	            if $test -f $i/errno.h -a -f $i/stdio.h -a -f $i/time.h; then
+		            usrinc=$i
+	                echo "Guessing usrinc $usrinc." >&4
+		            break
+		        fi
+	            done
+	            case "$usrinc" in
+	                '') echo "Usrinc not defined." >&4; croak=y ;;
+	            esac
+                ;;
+            *)  echo "Using usrinc $usrinc." >&4 ;;
+	    esac
+	    case "$croak" in
+	        y) echo "Cannot continue, aborting." >&4; exit 1 ;;
+	    esac
+        locincpth=' '
+        loclibpth=' '
+    else
+        echo "Cross-compiling using sysroot $sysroot, guessing of GCC inc/lib paths skipped" >&4
+    fi
+    : compile a host miniperl and generate_uudmap, unless we got passed them
+    if $test "X$hostperl" = X; then
+      echo "Building host miniperl and generate_uudmap binaries" >&4
+      cd ..
+      test -d host || mkdir host
+      cd host && rm -r ./*
+      ../Configure -des -Dusedevel -Dmksymlinks
+      make miniperl
+      make generate_uudmap
+      hostperl=host/miniperl
+      hostgenerate=host/generate_uudmap
+      cd ..
+      cd UU
+    fi
+    ;;
+*)
+    usecrosscompile='undef'
+    ;;
+esac
+
+## Define -Dtargethost=somecomputer to run compiled tests on another machine
+case "$targethost" in
+    '') echo "Checking for cross-compile" >&4
+    case "$usecrosscompile$multiarch" in
+       *$define*) echo "Skipping the try tests in the rest of Configure as no targethost was defined when cross-compiling" >&4
+         if [ -f Makefile ]; then
+           echo " "
+           echo "Now you must ensure config.sh, config.h and the generated headers exist and run a $make."
+         else
+           echo "Configure done."
+         fi
+       exit 0
+       ;;
+     *) echo "No targethost for running compiler tests against defined, running locally" >&4
+        run=''
+        to=:
+        from=:
+        ;;
+    esac
+    ;;
+    *) echo "Using targethost $targethost." >&4
+       case "$src" in
+	       /*) run=$src/Cross/run
+	           targetmkdir=$src/Cross/mkdir
+	           to=$src/Cross/to
+	           from=$src/Cross/from
+	           ;;
+	       *)  pwd=`$test -f ../Configure && cd ..; pwd`
+	           run=$pwd/Cross/run
+	           targetmkdir=$pwd/Cross/mkdir
+	           to=$pwd/Cross/to
+	           from=$pwd/Cross/from
+	           ;;
+	   esac
+	   case "$targetrun" in
+	       '') targetrun=ssh ;;
+	   esac
+	   case "$targetto" in
+	       '') targetto=scp ;;
+	   esac
+	   case "$targetfrom" in
+	       '') targetfrom=scp ;;
+	   esac
+       run=$run-$targetrun
+       to=$to-$targetto
+       from=$from-$targetfrom
+	   case "$targetdir" in
+	       '')  targetdir=/tmp
+               echo "Guessing targetdir $targetdir." >&4
+               ;;
+	   esac
+	   case "$targetuser" in
+	       '')  targetuser=root
+               echo "Guessing targetuser $targetuser." >&4
+               ;;
+	   esac
+	   case "$targetfrom" in
+	       scp)	q=-q ;;
+	       *)	q='' ;;
+	   esac
+	   case "$targetrun" in
+	       ssh|rsh)
+	           cat >$run <<EOF
 #!/bin/sh
 case "\$1" in
 -cwd)
@@ -2904,32 +2975,29 @@ case "\$cwd" in
 esac
 exe=\$1
 shift
-if $test ! -f \$exe.xok; then
-  $to \$exe
-  $touch \$exe.xok
-fi
-$targetrun -l $targetuser $targethost "cd \$cwd && ./\$exe \$@"
+$to \$exe
+$targetrun -l $targetuser $targethost "\$cwd/\$exe \$@"
 EOF
 	    ;;
-	*)  echo "Unknown targetrun '$targetrun'" >&4
-	    exit 1
-	    ;;
-	esac
-	case "$targetmkdir" in
-	*/Cross/mkdir)
+	       *)  echo "Unknown targetrun '$targetrun'" >&4
+	           exit 1
+	           ;;
+	   esac
+	   case "$targetmkdir" in
+	       */Cross/mkdir)
 	    cat >$targetmkdir <<EOF
 #!/bin/sh
 $targetrun -l $targetuser $targethost "mkdir -p \$@"
 EOF
 	    $chmod a+rx $targetmkdir
 	    ;;
-	*)  echo "Unknown targetmkdir '$targetmkdir'" >&4
-	    exit 1
-	    ;;
-	esac
-	case "$targetto" in
-	scp|rcp)
-	    cat >$to <<EOF
+	       *)  echo "Unknown targetmkdir '$targetmkdir'" >&4
+	           exit 1
+	           ;;
+	   esac
+	   case "$targetto" in
+	       scp|rcp)
+	           cat >$to <<EOF
 #!/bin/sh
 for f in \$@
 do
@@ -2946,8 +3014,8 @@ do
 done
 exit 0
 EOF
-	    ;;
-	cp) cat >$to <<EOF
+	           ;;
+	       cp) cat >$to <<EOF
 #!/bin/sh
 for f in \$@
 do
@@ -2964,14 +3032,14 @@ do
 done
 exit 0
 EOF
-	    ;;
-	*)  echo "Unknown targetto '$targetto'" >&4
-	    exit 1
-	    ;;
-	esac
-	case "$targetfrom" in
-	scp|rcp)
-	  cat >$from <<EOF
+	           ;;
+	       *)  echo "Unknown targetto '$targetto'" >&4
+	           exit 1
+	           ;;
+	   esac
+	   case "$targetfrom" in
+	       scp|rcp)
+	           cat >$from <<EOF
 #!/bin/sh
 for f in \$@
 do
@@ -2980,8 +3048,8 @@ do
 done
 exit 0
 EOF
-	    ;;
-	cp) cat >$from <<EOF
+	           ;;
+	       cp) cat >$from <<EOF
 #!/bin/sh
 for f in \$@
 do
@@ -2990,42 +3058,36 @@ do
 done
 exit 0
 EOF
-	    ;;
-	*)  echo "Unknown targetfrom '$targetfrom'" >&4
-	    exit 1
-	    ;;
-	esac
-	if $test ! -f $run; then
-	    echo "Target 'run' script '$run' not found." >&4
-	else
-	    $chmod a+rx $run
-	fi
-	if $test ! -f $to; then
-	    echo "Target 'to' script '$to' not found." >&4
-	else
-	    $chmod a+rx $to
-	fi
-	if $test ! -f $from; then
-	    echo "Target 'from' script '$from' not found." >&4
-	else
-	    $chmod a+rx $from
-	fi
-	if $test ! -f $run -o ! -f $to -o ! -f $from; then
-	    exit 1
-	fi
-	cat >&4 <<EOF
+	           ;;
+	       *)  echo "Unknown targetfrom '$targetfrom'" >&4
+	           exit 1
+	           ;;
+	   esac
+	   if $test ! -f $run; then
+	       echo "Target 'run' script '$run' not found." >&4
+	   else
+	       $chmod a+rx $run
+	   fi
+	   if $test ! -f $to; then
+	       echo "Target 'to' script '$to' not found." >&4
+	   else
+	       $chmod a+rx $to
+	   fi
+	   if $test ! -f $from; then
+	       echo "Target 'from' script '$from' not found." >&4
+	   else
+	       $chmod a+rx $from
+	   fi
+	   if $test ! -f $run -o ! -f $to -o ! -f $from; then
+	       exit 1
+	   fi
+	   cat >&4 <<EOF
 Using '$run' for remote execution,
 and '$from' and '$to'
 for remote file transfer.
 EOF
-	;;
-*)	run=''
-	to=:
-	from=:
-	usecrosscompile='undef'
-	targetarch=''
-	;;
-esac
+	   ;;
+esac # if targethost
 
 : see whether [:lower:] and [:upper:] are supported character classes
 echo " "
@@ -4515,9 +4577,10 @@ case "$gccversion" in
 esac
 
 : What should the include directory be ?
+: Use sysroot if set, so findhdr looks in the right place.
 echo " "
 $echo $n "Hmm...  $c"
-dflt='/usr/include'
+dflt="$sysroot/usr/include"
 incpath=''
 mips_type=''
 if $test -f /bin/mips && /bin/mips; then
@@ -4721,14 +4784,21 @@ case "$libpth" in
 esac
 
 : Now check and see which directories actually exist, avoiding duplicates
+: Use sysroot for checking so we find cross-compiler dirs
 libpth=''
+: create list of actual paths on disk, for lib hunting later
+libsearchpth=''
 for xxx in $dlist
 do
-    if $test -d $xxx; then
+    if $test -d $sysroot$xxx; then
 		case " $libpth " in
 		*" $xxx "*) ;;
 		*) libpth="$libpth $xxx";;
 		esac
+        case " $libsearchpth " in
+		*" $sysroot$xxx "*) ;;
+		*) libsearchpth="$libsearchpth $sysroot$xxx";;
+		esac            
     fi
 done
 $cat <<'EOM'
@@ -4739,6 +4809,14 @@ know not to be holding relevant libraries, and add any that are needed.
 Say "none" for none.
 
 EOM
+
+if test "X$sysroot" != X; then
+  $cat <<EOM
+You have set sysroot to $sysroot, please supply the directories excluding sysroot
+
+EOM
+fi
+
 case "$libpth" in
 '') dflt='none';;
 *)
@@ -4753,11 +4831,20 @@ case "$ans" in
 none) libpth=' ';;
 *) libpth="$ans";;
 esac
+: reset libsearchpth, listing each path with sysroot included, removing any duplicates
+libsearchpth=''
+for xxx in $libpth
+do
+    case " $libsearchpth " in
+    *" $sysroot$xxx "*) ;;
+    *) libsearchpth="$libsearchpth $sysroot$xxx";;
+    esac
+done
 
 : compute shared library extension
 case "$so" in
 '')
-	if xxx=`./loc libc.sl X $libpth`; $test -f "$xxx"; then
+	if xxx=`./loc libc.sl X $libsearchpth`; $test -f "$xxx"; then
 		dflt='sl'
 	else
 		dflt='so'
@@ -4904,7 +4991,7 @@ libsfound=''
 libsfiles=''
 libsdirs=''
 libspath=''
-for thisdir in $libpth $xlibpth; do
+for thisdir in $libsearchpth $xlibpth; do
   test -d $thisdir && libspath="$libspath $thisdir"
 done
 for thislib in $libswanted; do
@@ -7452,7 +7539,7 @@ echo " "
 case "$libc" in
 '') libc=unknown
 	case "$libs" in
-	*-lc_s*) libc=`./loc libc_s$_a $libc $libpth`
+	*-lc_s*) libc=`./loc libc_s$_a $libc $libsearchpth`
 	esac
 	;;
 esac
@@ -7465,17 +7552,17 @@ case "$libs" in
 		;;
 	-l*)
 		thislib=`echo $thislib | $sed -e 's/^-l//'`
-		if try=`./loc lib$thislib.$so.'*' X $libpth`; $test -f "$try"; then
+		if try=`./loc lib$thislib.$so.'*' X $libsearchpth`; $test -f "$try"; then
 			:
-		elif try=`./loc lib$thislib.$so X $libpth`; $test -f "$try"; then
+		elif try=`./loc lib$thislib.$so X $libsearchpth`; $test -f "$try"; then
 			:
-		elif try=`./loc lib$thislib$_a X $libpth`; $test -f "$try"; then
+		elif try=`./loc lib$thislib$_a X $libsearchpth`; $test -f "$try"; then
 			:
-		elif try=`./loc $thislib$_a X $libpth`; $test -f "$try"; then
+		elif try=`./loc $thislib$_a X $libsearchpth`; $test -f "$try"; then
 			:
-		elif try=`./loc lib$thislib X $libpth`; $test -f "$try"; then
+		elif try=`./loc lib$thislib X $libsearchpth`; $test -f "$try"; then
 			:
-		elif try=`./loc $thislib X $libpth`; $test -f "$try"; then
+		elif try=`./loc $thislib X $libsearchpth`; $test -f "$try"; then
 			:
 		elif try=`./loc Slib$thislib$_a X $xlibpth`; $test -f "$try"; then
 			:
@@ -7493,7 +7580,7 @@ xxx=normal
 case "$libc" in
 unknown)
 	set /lib/libc.$so
-	for xxx in $libpth; do
+	for xxx in $libsearchpth; do
 		$test -r $1 || set $xxx/libc.$so
 		: The messy sed command sorts on library version numbers.
 		$test -r $1 || \
@@ -7534,10 +7621,10 @@ elif $test -r /lib/libc$_a; then
 	libc=/lib/libc$_a;
 	echo "Your C library seems to be in $libc.  You're normal."
 else
-	if tans=`./loc libc$_a blurfl/dyick $libpth`; $test -r "$tans"; then
+	if tans=`./loc libc$_a blurfl/dyick $libsearchpth`; $test -r "$tans"; then
 		:
-	elif tans=`./loc libc blurfl/dyick $libpth`; $test -r "$tans"; then
-		libnames="$libnames "`./loc clib blurfl/dyick $libpth`
+	elif tans=`./loc libc blurfl/dyick $libsearchpth`; $test -r "$tans"; then
+		libnames="$libnames "`./loc clib blurfl/dyick $libsearchpth`
 	elif tans=`./loc clib blurfl/dyick $libpth`; $test -r "$tans"; then
 		:
 	elif tans=`./loc Slibc$_a blurfl/dyick $xlibpth`; $test -r "$tans"; then
@@ -7564,7 +7651,7 @@ compiler, or your machine supports multiple models), you can override it here.
 EOM
 else
 	dflt=''
-	echo $libpth | $tr ' ' $trnl | $sort | $uniq > libpath
+	echo $libsearchpth | $tr ' ' $trnl | $sort | $uniq > libpath
 	cat >&4 <<EOM
 I can't seem to find your C library.  I've looked in the following places:
 
@@ -7788,11 +7875,10 @@ yes)
 			echo "$extern_C void *$1$tdc; void *(*(p()))$tdc { return &$1; } int main() { if(p()) return(0); else return(1); }"> try.c;
 			$cc -o try $optimize $ccflags $ldflags try.c >/dev/null 2>&1 $libs && tval=true;
 			$test "$mistrustnm" = run -a -x try && { $run ./try$_exe >/dev/null 2>&1 || tval=false; };
-			$rm_try;
 		fi;
 	else
 		echo "$extern_C void *$1$tdc; void *(*(p()))$tdc { return &$1; } int main() { if(p()) return(0); else return(1); }"> try.c;
-		$cc -o try $optimize $ccflags $ldflags try.c $libs >/dev/null 2>&1 && tval=true;
+		$cc -o try $optimize $ccflags $ldflags try.c $libs && tval=true;
 		$rm_try;
 	fi;
 	;;
@@ -8015,7 +8101,7 @@ EOM
 			      '') dflt="$dflt +vnocompatwarnings" ;;
 			      esac
 			      ;;
-			linux|irix*|gnu*)  dflt="-shared $optimize" ;;
+			linux*|irix*|gnu*)  dflt="-shared $optimize" ;;
 			next)  dflt='none' ;;
 			solaris) dflt='-G' ;;
 			sunos) dflt='-assert nodefinitions' ;;
@@ -8025,6 +8111,10 @@ EOM
 			;;
     *) dflt="$lddlflags" ;;
     esac
+
+    if $test "X$sysroot" != X; then
+        dflt="$dflt --sysroot $sysroot"
+    fi
 
 	: Try to guess additional flags to pick up local libraries.
 	: Be careful not to append to a plain 'none'
@@ -8072,7 +8162,7 @@ say "none".
 EOM
     case "$ccdlflags" in
     '') case "$osname" in
-	    linux|hpux|gnu*)	dflt='-Wl,-E' ;;
+	    linux*|hpux|gnu*)	dflt='-Wl,-E' ;;
 	    next|sunos)	dflt='none' ;;
 	    *)		dflt='none' ;;
 	    esac ;;
@@ -12799,7 +12889,7 @@ EOCP
 		echo "$startsh" >mtry
 		echo "$run ./try >try.out 2>try.ret 4>try.err || exit 4" >>mtry
 		chmod +x mtry
-		./mtry >/dev/null 2>&1
+		$run ./mtry >/dev/null 2>&1
 		case $? in
 		0) eagain=`$cat try.out`;;
 		1) echo "Could not perform non-blocking setting!";;
@@ -19448,7 +19538,7 @@ int main()
 EOCP
 				set try
 				if eval $compile_ok; then
-					dflt=`try`
+					dflt=`$run try`
 				else
 					dflt='?'
 					echo "(I can't seem to compile the test program...)"
@@ -19669,7 +19759,13 @@ EOCP
                 set tryp
                 if eval $compile; then
                     $rm -f tryp.out
-                    $cat tryp.c | $run ./tryp 2>/dev/null > tryp.out
+                    # Copy the .c file to the remote host ($to is an ssh-alike if targethost is set)
+                    if $test "X$targethost" != X; then
+                        $to tryp.c
+                        $run ./tryp \< tryp.c 2>/dev/null > tryp.out
+                    else
+                        $cat tryp.c | $run ./tryp 2>/dev/null > tryp.out
+                    fi
                     if cmp tryp.c tryp.out >/dev/null 2>&1; then
                        $cat >&4 <<EOM
 fflush(NULL) seems to behave okay with input streams.
@@ -19733,7 +19829,12 @@ EOCP
 	set tryp
 	if eval $compile; then
 	    $rm -f tryp.out
-	    $cat tryp.c | $run ./tryp 2>/dev/null > tryp.out
+        if $test "X$targethost" != X; then
+            $to tryp.c
+            $run ./tryp \< tryp.c 2>/dev/null > tryp.out
+        else
+            $cat tryp.c | $run ./tryp 2>/dev/null > tryp.out
+        fi
 	    if cmp tryp.c tryp.out >/dev/null 2>&1; then
 	       $cat >&4 <<EOM
 Good, at least fflush(stdin) seems to behave okay when stdin is a pipe.
@@ -23438,6 +23539,8 @@ html1dir='$html1dir'
 html1direxp='$html1direxp'
 html3dir='$html3dir'
 html3direxp='$html3direxp'
+hostgenerate='$hostgenerate'
+hostperl='$hostperl'
 i16size='$i16size'
 i16type='$i16type'
 i32size='$i32size'
@@ -23588,6 +23691,7 @@ libperl='$libperl'
 libpth='$libpth'
 libs='$libs'
 libsdirs='$libsdirs'
+libsearchpth='$libsearchpth'
 libsfiles='$libsfiles'
 libsfound='$libsfound'
 libspath='$libspath'
@@ -23805,6 +23909,7 @@ strings='$strings'
 submit='$submit'
 subversion='$subversion'
 sysman='$sysman'
+sysroot='$sysroot'
 tail='$tail'
 tar='$tar'
 targetarch='$targetarch'

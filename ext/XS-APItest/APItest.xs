@@ -78,7 +78,7 @@ bool sv_setsv_cow_hashkey_notcore(void);
 /* A routine to test hv_delayfree_ent
    (which itself is tested by testing on hv_free_ent  */
 
-typedef void (freeent_function)(pTHX_ HV *, register HE *);
+typedef void (freeent_function)(pTHX_ HV *, HE *);
 
 void
 test_freeent(freeent_function *f) {
@@ -3262,7 +3262,7 @@ CODE:
 OUTPUT:
     RETVAL
 
-bool
+U32
 SvIsCOW(SV *sv)
 CODE:
     RETVAL = SvIsCOW(sv);
@@ -3407,6 +3407,57 @@ CODE:
 OUTPUT:
     RETVAL
 
+ # provide access to CALLREGEXEC, except replace pointers within the
+ # string with offsets from the start of the string
+
+I32
+callregexec(SV *prog, STRLEN stringarg, STRLEN strend, I32 minend, SV *sv, U32 nosave)
+CODE:
+    {
+	STRLEN len;
+	char *strbeg;
+	if (SvROK(prog))
+	    prog = SvRV(prog);
+	strbeg = SvPV_force(sv, len);
+	RETVAL = CALLREGEXEC((REGEXP *)prog,
+			    strbeg + stringarg,
+			    strbeg + strend,
+			    strbeg,
+			    minend,
+			    sv,
+			    NULL, /* data */
+			    nosave);
+    }
+OUTPUT:
+    RETVAL
+
+void
+lexical_import(SV *name, CV *cv)
+    CODE:
+    {
+	PADLIST *pl;
+	PADOFFSET off;
+	if (!PL_compcv)
+	    Perl_croak(aTHX_
+		      "lexical_import can only be called at compile time");
+	pl = CvPADLIST(PL_compcv);
+	ENTER;
+	SAVESPTR(PL_comppad_name); PL_comppad_name = PadlistNAMES(pl);
+	SAVESPTR(PL_comppad);	   PL_comppad	   = PadlistARRAY(pl)[1];
+	SAVESPTR(PL_curpad);	   PL_curpad	   = PadARRAY(PL_comppad);
+	off = pad_add_name_sv(sv_2mortal(newSVpvf("&%"SVf,name)),
+			      padadd_STATE, 0, 0);
+	SvREFCNT_dec(PL_curpad[off]);
+	PL_curpad[off] = SvREFCNT_inc(cv);
+	LEAVE;
+    }
+
+SV *
+sv_mortalcopy(SV *sv)
+    CODE:
+	RETVAL = SvREFCNT_inc(sv_mortalcopy(sv));
+    OUTPUT:
+	RETVAL
 
 MODULE = XS::APItest PACKAGE = XS::APItest::AUTOLOADtest
 
@@ -3530,6 +3581,20 @@ bool
 test_isBLANK_utf8(unsigned char * p)
     CODE:
         RETVAL = isBLANK_utf8(p);
+    OUTPUT:
+        RETVAL
+
+bool
+test_isVERTWS_uni(UV ord)
+    CODE:
+        RETVAL = isVERTWS_uni(ord);
+    OUTPUT:
+        RETVAL
+
+bool
+test_isVERTWS_utf8(unsigned char * p)
+    CODE:
+        RETVAL = isVERTWS_utf8(p);
     OUTPUT:
         RETVAL
 

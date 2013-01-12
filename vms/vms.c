@@ -85,29 +85,6 @@ struct item_list_3 {
 };
 #pragma member_alignment restore
 
-#if __CRTL_VER >= 70300000 && !defined(__VAX)
-
-static int set_feature_default(const char *name, int value)
-{
-    int status;
-    int index;
-
-    index = decc$feature_get_index(name);
-
-    status = decc$feature_set_value(index, 1, value);
-    if (index == -1 || (status == -1)) {
-      return -1;
-    }
-
-    status = decc$feature_get_value(index, 1);
-    if (status != value) {
-      return -1;
-    }
-
-return 0;
-}
-#endif
-
 /* Older versions of ssdef.h don't have these */
 #ifndef SS$_INVFILFOROP
 #  define SS$_INVFILFOROP 3930
@@ -1072,7 +1049,7 @@ int Perl_my_trnlnm(pTHX_ const char *lnm, char *eqv, unsigned long int idx)
     if (aTHX != NULL)
 #endif
 #ifdef SECURE_INTERNAL_GETENV
-        flags = (PL_curinterp ? PL_tainting : will_taint) ?
+        flags = (PL_curinterp ? TAINTING_get : will_taint) ?
                  PERL__TRNENV_SECURE : 0;
 #endif
 
@@ -1145,7 +1122,7 @@ Perl_my_getenv(pTHX_ const char *lnm, bool sys)
       /* Impose security constraints only if tainting */
       if (sys) {
         /* Impose security constraints only if tainting */
-        secure = PL_curinterp ? PL_tainting : will_taint;
+        secure = PL_curinterp ? TAINTING_get : will_taint;
         saverr = errno;  savvmserr = vaxc$errno;
       }
       else {
@@ -1244,7 +1221,7 @@ Perl_my_getenv_len(pTHX_ const char *lnm, unsigned long *len, bool sys)
     else {
       if (sys) {
         /* Impose security constraints only if tainting */
-        secure = PL_curinterp ? PL_tainting : will_taint;
+        secure = PL_curinterp ? TAINTING_get : will_taint;
         saverr = errno;  savvmserr = vaxc$errno;
       }
       else {
@@ -1716,14 +1693,9 @@ Perl_my_setenv(pTHX_ const char *lnm, const char *eqv)
 /*  vmssetuserlnm
  *  sets a user-mode logical in the process logical name table
  *  used for redirection of sys$error
- *
- *  Fix-me: The pTHX is not needed for this routine, however doio.c
- *          is calling it with one instead of using a macro.
- *          A macro needs to be added to vmsish.h and doio.c updated to use it.
- *
  */
 void
-Perl_vmssetuserlnm(pTHX_ const char *name, const char *eqv)
+Perl_vmssetuserlnm(const char *name, const char *eqv)
 {
     $DESCRIPTOR(d_tab, "LNM$PROCESS");
     struct dsc$descriptor_d d_name = {0,DSC$K_DTYPE_T,DSC$K_CLASS_D,0};
@@ -4264,7 +4236,7 @@ safe_popen(pTHX_ const char *cmd, const char *in_mode, int *psts)
 	    info->fp  = PerlIO_open(mbx, mode);
         } else {
             info->fp = (PerlIO *) freopen(mbx, mode, stdin);
-            Perl_vmssetuserlnm(aTHX_ "SYS$INPUT",mbx);
+            vmssetuserlnm("SYS$INPUT", mbx);
         }
 
         if (!info->fp && info->out) {
@@ -4319,7 +4291,7 @@ safe_popen(pTHX_ const char *cmd, const char *in_mode, int *psts)
 	    info->fp  = PerlIO_open(mbx, mode);
         } else {
             info->fp = (PerlIO *) freopen(mbx, mode, stdout);
-            Perl_vmssetuserlnm(aTHX_ "SYS$OUTPUT",mbx);
+            vmssetuserlnm("SYS$OUTPUT", mbx);
         }
 
         if (info->in) {
@@ -6495,13 +6467,26 @@ static char * int_pathify_dirspec_simple(const char * dir, char * buf,
             len += n_len;
             if (e_len > 0) {
                 if (decc_efs_charset) {
-                    buf[len] = '^';
-                    len++;
-                    memcpy(&buf[len], e_spec, e_len);
-                    len += e_len;
-                } else {
-                    set_vaxc_errno(RMS$_DIR);
-                    set_errno(ENOTDIR);
+                    if (e_len == 4 
+                        && (toupper(e_spec[1]) == 'D')
+                        && (toupper(e_spec[2]) == 'I')
+                        && (toupper(e_spec[3]) == 'R')) {
+
+                        /* Corner case: directory spec with invalid version.
+                         * Valid would have followed is_dir path above.
+                         */
+                        SETERRNO(ENOTDIR, RMS$_DIR);
+                        return NULL;
+                    }
+                    else {
+                        buf[len] = '^';
+                        len++;
+                        memcpy(&buf[len], e_spec, e_len);
+                        len += e_len;
+                    }
+                }
+                else {
+                    SETERRNO(ENOTDIR, RMS$_DIR);
                     return NULL;
                 }
             }
@@ -8383,40 +8368,22 @@ static char *int_tovmsspec
   dirend = strrchr(path,'/');
 
   if (dirend == NULL) {
-     char *macro_start;
-     int has_macro;
-
      /* If we get here with no UNIX directory delimiters, then this is
-        not a complete file specification, either garbage a UNIX glob
-	specification that can not be converted to a VMS wildcard, or
-	it a UNIX shell macro.  MakeMaker wants shell macros passed
-	through AS-IS,
-
-	utf8 flag setting needs to be preserved.
+      * not a complete file specification, such as a Unix glob
+      * specification, shell macro, make macro, or even a valid VMS
+      * filespec but with unescaped extended characters.  The safest
+      * thing in all these cases is to pass it through as-is.
       */
-      hasdir = 0;
-
-      has_macro = 0;
-      macro_start = strchr(path,'$');
-      if (macro_start != NULL) {
-          if (macro_start[1] == '(') {
-              has_macro = 1;
-          }
+      my_strlcpy(rslt, path, VMS_MAXRSS);
+      if (vms_debug_fileify) {
+          fprintf(stderr, "int_tovmsspec: rslt = %s\n", rslt);
       }
-      if ((decc_efs_charset == 0) || (has_macro)) {
-          my_strlcpy(rslt, path, VMS_MAXRSS);
-          if (vms_debug_fileify) {
-              fprintf(stderr, "int_tovmsspec: rslt = %s\n", rslt);
-          }
-          return rslt;
-      }
+      return rslt;
   }
   else if (*(dirend+1) == '.') {  /* do we have trailing "/." or "/.." or "/..."? */
     if (!*(dirend+2)) dirend +=2;
     if (*(dirend+2) == '.' && !*(dirend+3)) dirend += 3;
-    if (decc_efs_charset == 0) {
-      if (*(dirend+2) == '.' && *(dirend+3) == '.' && !*(dirend+4)) dirend += 4;
-    }
+    if (*(dirend+2) == '.' && *(dirend+3) == '.' && !*(dirend+4)) dirend += 4;
   }
 
   cp1 = rslt;
@@ -9164,12 +9131,12 @@ mp_getredirection(pTHX_ int *ac, char ***av)
 	fprintf(stderr,"Can't open output file %s as stdout",out);
 	exit(vaxc$errno);
 	}
-	if (out != NULL) Perl_vmssetuserlnm(aTHX_ "SYS$OUTPUT",out);
+	if (out != NULL) vmssetuserlnm("SYS$OUTPUT", out);
 
     if (err != NULL) {
         if (strcmp(err,"&1") == 0) {
             dup2(fileno(stdout), fileno(stderr));
-            Perl_vmssetuserlnm(aTHX_ "SYS$ERROR","SYS$OUTPUT");
+            vmssetuserlnm("SYS$ERROR", "SYS$OUTPUT");
         } else {
 	FILE *tmperr;
 	if (NULL == (tmperr = fopen(err, errmode, "mbc=32", "mbf=2")))
@@ -9182,7 +9149,7 @@ mp_getredirection(pTHX_ int *ac, char ***av)
 		{
 		exit(vaxc$errno);
 		}
-	    Perl_vmssetuserlnm(aTHX_ "SYS$ERROR",err);
+	    vmssetuserlnm("SYS$ERROR", err);
 	}
         }
 #ifdef ARGPROC_DEBUG
@@ -10184,7 +10151,7 @@ Perl_readdir(pTHX_ DIR *dd)
 
         /* In Unix report mode, remove the ".dir;1" from the name */
         /* if it is a real directory. */
-        if (decc_filename_unix_report || decc_efs_charset) {
+        if (decc_filename_unix_report && decc_efs_charset) {
             if (is_dir_ext(e_spec, e_len, vs_spec, vs_len)) {
                 Stat_t statbuf;
                 int ret_sts;
@@ -13212,7 +13179,7 @@ Perl_vms_start_glob
 
                 /* In Unix report mode, remove the ".dir;1" from the name */
                 /* if it is a real directory */
-                if (decc_filename_unix_report || decc_efs_charset) {
+                if (decc_filename_unix_report && decc_efs_charset) {
                     if (is_dir_ext(e_spec, e_len, vs_spec, vs_len)) {
                         Stat_t statbuf;
                         int ret_sts;
@@ -13895,6 +13862,35 @@ int Perl_vms_case_tolerant(void)
 
  /* Start of DECC RTL Feature handling */
 
+#if __CRTL_VER >= 70300000 && !defined(__VAX)
+
+static int
+set_feature_default(const char *name, int value)
+{
+    int status;
+    int index;
+
+    index = decc$feature_get_index(name);
+
+    status = decc$feature_set_value(index, 1, value);
+    if (index == -1 || (status == -1)) {
+      return -1;
+    }
+
+    status = decc$feature_get_value(index, 1);
+    if (status != value) {
+      return -1;
+    }
+
+    /* Various things may check for an environment setting
+     * rather than the feature directly, so set that too.
+     */
+    vmssetuserlnm(name, value ? "ENABLE" : "DISABLE");
+
+    return 0;
+}
+#endif
+
 
 /* C RTL Feature settings */
 
@@ -13983,13 +13979,12 @@ vmsperl_set_features(void)
 	 vms_unlink_all_versions = 0;
     }
 
-    /* Dectect running under GNV Bash or other UNIX like shell */
 #if __CRTL_VER >= 70300000 && !defined(__VAX)
+    /* Detect running under GNV Bash or other UNIX like shell */
     gnv_unix_shell = 0;
     status = simple_trnlnm("GNV$UNIX_SHELL", val_str, sizeof(val_str));
     if ($VMS_STATUS_SUCCESS(status)) {
 	 gnv_unix_shell = 1;
-	 set_feature_default("DECC$EFS_CASE_PRESERVE", 1);
 	 set_feature_default("DECC$EFS_CHARSET", 1);
 	 set_feature_default("DECC$FILENAME_UNIX_NO_VERSION", 1);
 	 set_feature_default("DECC$FILENAME_UNIX_REPORT", 1);
@@ -13998,6 +13993,9 @@ vmsperl_set_features(void)
 	 vms_unlink_all_versions = 1;
 	 vms_posix_exit = 1;
     }
+    /* Some reasonable defaults that are not CRTL defaults */
+    set_feature_default("DECC$EFS_CASE_PRESERVE", 1);
+    set_feature_default("DECC$ARGV_PARSE_STYLE", 1);     /* Requires extended parse. */
 #endif
 
     /* hacks to see if known bugs are still present for testing */
@@ -14190,7 +14188,7 @@ extern void (*vmsperl_unused_global_1)(void) = LIB$INITIALIZE;
  * LIB$INITIALIZE section. In our case, the array only has one entry.
  */ 
 #pragma extern_model save 
-#pragma extern_model strict_refdef "LIB$INITIALIZE" gbl,noexe,nowrt,noshr,long 
+#pragma extern_model strict_refdef "LIB$INITIALIZE" nopic,gbl,nowrt,noshr,long 
 extern void (* const vmsperl_unused_global_2[])() = 
 { 
    vmsperl_set_features,

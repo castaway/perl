@@ -780,7 +780,7 @@ we have not made another match:
     $1 is Mutt; $2 is Jeff
     $1 is Wallace; $2 is Grommit
 
-Due to an unfortunate accident of Perl's implementation, C<use
+If you are using Perl v5.16 or earlier, note that C<use
 English> imposes a considerable performance penalty on all regular
 expression matches in a program because it uses the C<$`>, C<$&>, and
 C<$'>, regardless of whether they occur in the scope of C<use
@@ -796,6 +796,9 @@ problematic match variables in your code.
 Since Perl v5.10.0, you can use the C</p> match operator flag and the
 C<${^PREMATCH}>, C<${^MATCH}>, and C<${^POSTMATCH}> variables instead
 so you only suffer the performance penalties.
+
+If you are using Perl v5.18.0 or higher, you do not need to worry about
+this, as the three naughty variables are no longer naughty.
 
 =over 8
 
@@ -819,7 +822,8 @@ The string matched by the last successful pattern match (not counting
 any matches hidden within a BLOCK or C<eval()> enclosed by the current
 BLOCK).
 
-The use of this variable anywhere in a program imposes a considerable
+In Perl v5.16 and earlier, the use of this variable
+anywhere in a program imposes a considerable
 performance penalty on all regular expression matches.  To avoid this
 penalty, you can extract the same substring by using L</@->.  Starting
 with Perl v5.10.0, you can use the C</p> match flag and the C<${^MATCH}>
@@ -833,9 +837,11 @@ Mnemonic: like C<&> in some editors.
 X<${^MATCH}>
 
 This is similar to C<$&> (C<$MATCH>) except that it does not incur the
-performance penalty associated with that variable, and is only guaranteed
+performance penalty associated with that variable.
+In Perl v5.16 and earlier, it is only guaranteed
 to return a defined value when the pattern was compiled or executed with
-the C</p> modifier.
+the C</p> modifier.  In Perl v5.18, the C</p> modifier does nothing, so
+C<${^MATCH}> does the same thing as C<$MATCH>.
 
 This variable was added in Perl v5.10.0.
 
@@ -850,7 +856,8 @@ The string preceding whatever was matched by the last successful
 pattern match, not counting any matches hidden within a BLOCK or C<eval>
 enclosed by the current BLOCK.
 
-The use of this variable anywhere in a program imposes a considerable
+In Perl v5.16 and earlier, the use of this variable
+anywhere in a program imposes a considerable
 performance penalty on all regular expression matches.  To avoid this
 penalty, you can extract the same substring by using L</@->.  Starting
 with Perl v5.10.0, you can use the C</p> match flag and the
@@ -865,9 +872,11 @@ Mnemonic: C<`> often precedes a quoted string.
 X<$`> X<${^PREMATCH}>
 
 This is similar to C<$`> ($PREMATCH) except that it does not incur the
-performance penalty associated with that variable, and is only guaranteed
+performance penalty associated with that variable. 
+In Perl v5.16 and earlier, it is only guaranteed
 to return a defined value when the pattern was compiled or executed with
-the C</p> modifier.
+the C</p> modifier.  In Perl v5.18, the C</p> modifier does nothing, so
+C<${^PREMATCH}> does the same thing as C<$PREMATCH>.
 
 This variable was added in Perl v5.10.0
 
@@ -886,7 +895,8 @@ enclosed by the current BLOCK).  Example:
     /def/;
     print "$`:$&:$'\n";  	# prints abc:def:ghi
 
-The use of this variable anywhere in a program imposes a considerable
+In Perl v5.16 and earlier, the use of this variable
+anywhere in a program imposes a considerable
 performance penalty on all regular expression matches.
 To avoid this penalty, you can extract the same substring by
 using L</@->.  Starting with Perl v5.10.0, you can use the C</p> match flag
@@ -901,9 +911,11 @@ Mnemonic: C<'> often follows a quoted string.
 X<${^POSTMATCH}> X<$'> X<$POSTMATCH>
 
 This is similar to C<$'> (C<$POSTMATCH>) except that it does not incur the
-performance penalty associated with that variable, and is only guaranteed
+performance penalty associated with that variable.
+In Perl v5.16 and earlier, it is only guaranteed
 to return a defined value when the pattern was compiled or executed with
-the C</p> modifier.
+the C</p> modifier.  In Perl v5.18, the C</p> modifier does nothing, so
+C<${^POSTMATCH}> does the same thing as C<$POSTMATCH>.
 
 This variable was added in Perl v5.10.0.
 
@@ -1256,7 +1268,7 @@ when doing edit-in-place processing with B<-i>.  Useful when you have
 to do a lot of inserting and don't want to keep modifying C<$_>.  See
 L<perlrun> for the B<-i> switch.
 
-=item Handle->output_field_separator( EXPR )
+=item IO::Handle->output_field_separator( EXPR )
 
 =item $OUTPUT_FIELD_SEPARATOR
 
@@ -1267,6 +1279,9 @@ X<$,> X<$OFS> X<$OUTPUT_FIELD_SEPARATOR>
 
 The output field separator for the print operator.  If defined, this
 value is printed between each of print's arguments.  Default is C<undef>.
+
+You cannot call C<output_field_separator()> on a handle, only as a
+static method.  See L<IO::Handle|IO::Handle>.
 
 Mnemonic: what is printed when there is a "," in your print statement.
 
@@ -1305,7 +1320,7 @@ which handle you last accessed.
 
 Mnemonic: many programs use "." to mean the current line number.
 
-=item HANDLE->input_record_separator( EXPR )
+=item IO::Handle->input_record_separator( EXPR )
 
 =item $INPUT_RECORD_SEPARATOR
 
@@ -1361,11 +1376,14 @@ and may not be reading the number of bytes from the underlying file
 that you specified.  This behaviour may change without warning in a
 future version of perl.
 
-See also L<perlport/"Newlines">. Also see L</$.>.
+You cannot call C<input_record_separator()> on a handle, only as a
+static method.  See L<IO::Handle|IO::Handle>.
+
+See also L<perlport/"Newlines">.  Also see L</$.>.
 
 Mnemonic: / delimits line boundaries when quoting poetry.
 
-=item Handle->output_record_separator( EXPR )
+=item IO::Handle->output_record_separator( EXPR )
 
 =item $OUTPUT_RECORD_SEPARATOR
 
@@ -1376,6 +1394,9 @@ X<$\> X<$ORS> X<$OUTPUT_RECORD_SEPARATOR>
 
 The output record separator for the print operator.  If defined, this
 value is printed after the last of print's arguments.  Default is C<undef>.
+
+You cannot call C<output_record_separator()> on a handle, only as a
+static method.  See L<IO::Handle|IO::Handle>.
 
 Mnemonic: you set C<$\> instead of adding "\n" at the end of the print.
 Also, it's just like C<$/>, but it's what you get "back" from Perl.
@@ -1401,6 +1422,17 @@ how to select the output channel.  See also L<IO::Handle>.
 
 Mnemonic: when you want your pipes to be piping hot.
 
+=item ${^LAST_FH}
+X<${^LAST_FH}>
+
+This read-only variable contains a reference to the last-read filehandle.
+This is set by C<< <HANDLE> >>, C<readline>, C<tell>, C<eof> and C<seek>.
+This is the same handle that C<$.> and C<tell> and C<eof> without arguments
+use.  It is also the handle used when Perl appends ", <STDIN> line 1" to
+an error or warning message.
+
+This variable was added in Perl v5.18.0.
+
 =back
 
 =head3 Variables related to formats
@@ -1423,7 +1455,7 @@ of C<$^A> and empties.  So you never really see the contents of C<$^A>
 unless you call C<formline()> yourself and then look at it.  See
 L<perlform> and L<perlfunc/"formline PICTURE,LIST">.
 
-=item HANDLE->format_formfeed(EXPR)
+=item IO::Handle->format_formfeed(EXPR)
 
 =item $FORMAT_FORMFEED
 
@@ -1431,6 +1463,9 @@ L<perlform> and L<perlfunc/"formline PICTURE,LIST">.
 X<$^L> X<$FORMAT_FORMFEED>
 
 What formats output as a form feed.  The default is C<\f>.
+
+You cannot call C<format_formfeed()> on a handle, only as a static
+method.  See L<IO::Handle|IO::Handle>.
 
 =item HANDLE->format_page_number(EXPR)
 
@@ -1455,7 +1490,7 @@ channel.
 
 Mnemonic: lines_on_page - lines_printed.
 
-=item Handle->format_line_break_characters EXPR
+=item IO::Handle->format_line_break_characters EXPR
 
 =item $FORMAT_LINE_BREAK_CHARACTERS
 
@@ -1465,6 +1500,9 @@ X<$:> X<FORMAT_LINE_BREAK_CHARACTERS>
 The current set of characters after which a string may be broken to
 fill continuation fields (starting with C<^>) in a format.  The default is
 S<" \n-">, to break on a space, newline, or a hyphen.
+
+You cannot call C<format_line_break_characters()> on a handle, only as
+a static method.  See L<IO::Handle|IO::Handle>.
 
 Mnemonic: a "colon" in poetry is a part of a line.
 
@@ -2071,7 +2109,9 @@ This variable controls the state of the internal UTF-8 offset caching code.
 1 for on (the default), 0 for off, -1 to debug the caching code by checking
 all its results against linear scans, and panicking on any discrepancy.
 
-This variable was added in Perl v5.8.9.
+This variable was added in Perl v5.8.9.  It is subject to change or
+removal without notice, but is currently used to avoid recalculating the
+boundaries of multi-byte UTF-8-encoded characters.
 
 =item ${^UTF8LOCALE}
 X<${^UTF8LOCALE}>

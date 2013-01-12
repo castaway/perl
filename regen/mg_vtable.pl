@@ -42,7 +42,7 @@ my %mg =
      env => { char => 'E', vtable => 'env', desc => '%ENV hash' },
      envelem => { char => 'e', vtable => 'envelem',
 		  desc => '%ENV hash element' },
-     fm => { char => 'f', vtable => 'regdata', value_magic => 1,
+     fm => { char => 'f', vtable => 'regexp', value_magic => 1,
 	     readonly_acceptable => 1, desc => "Formline ('compiled' format)" },
      regex_global => { char => 'g', vtable => 'mglob', value_magic => 1,
 		       readonly_acceptable => 1, desc => 'm//g target' },
@@ -94,6 +94,7 @@ my %mg =
 		  desc => "Shadow \"foreach\" iterator variable /\nsmart parameter vivification" },
      arylen => { char => '#', vtable => 'arylen', value_magic => 1,
 		 desc => 'Array length ($#ary)' },
+     proto => { char => '&', desc => 'my sub prototype CV' },
      pos => { char => '.', vtable => 'pos', value_magic => 1,
 	      desc => 'pos() lvalue' },
      backref => { char => '<', vtable => 'backref', value_magic => 1,
@@ -112,7 +113,7 @@ my %mg =
 # These have a subtly different "namespace" from the magic types.
 my %sig =
     (
-     'sv' => {get => 'get', set => 'set', len => 'len'},
+     'sv' => {get => 'get', set => 'set'},
      'env' => {set => 'set_all_env', clear => 'clear_all_env'},
      'envelem' => {set => 'setenv', clear => 'clearenv'},
      'sigelem' => {get => 'getsig', set => 'setsig', clear => 'clearsig',

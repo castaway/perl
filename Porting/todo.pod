@@ -63,6 +63,14 @@ Schwern has promised to donate to $500 to TPF. We may need volunteers to
 hold him upside down and shake vigorously in order to actually extract the
 cash.
 
+=head2 Write descriptions for all tests
+
+Many individual tests in the test suite lack descriptions (or names, or labels
+-- call them what you will).  Many files completely lack descriptions, meaning
+that the only output you get is the test numbers.  If all tests had
+descriptions, understanding what the tests are testing and why they sometimes
+fail would both get a whole lot easier.
+
 =head2 Improve the coverage of the core tests
 
 Use Devel::Cover to ascertain the core modules' test coverage, then add
@@ -843,6 +851,12 @@ C<{}> used as a hashref, C<[]> or C<()>) it issues an error something like
 I<';' isn't legal inside an expression - if you need multiple statements use a
 do {...} block>. See the thread starting at
 L<http://www.xray.mpe.mpg.de/mailing-lists/perl5-porters/2008-09/msg00573.html>
+
+=head2 strict as warnings
+
+See L<http://markmail.org/message/vbrupaslr3bybmvk>, where Josua ben Jore
+writes:  I've been of the opinion that everything strict.pm does ought to be
+able to considered just warnings that have been promoted to 'FATAL'.
 
 =head2 lexicals used only once
 

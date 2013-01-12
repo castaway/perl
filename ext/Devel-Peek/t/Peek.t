@@ -241,7 +241,7 @@ do_test('reference to hash',
   FLAGS = \\(ROK\\)
   RV = $ADDR
   SV = PVHV\\($ADDR\\) at $ADDR
-    REFCNT = 1
+    REFCNT = [12]
     FLAGS = \\(SHAREKEYS\\)
     IV = 1					# $] < 5.009
     NV = $FLOAT					# $] < 5.009
@@ -296,8 +296,8 @@ do_test('reference to named subroutine without prototype',
   RV = $ADDR
   SV = PVCV\\($ADDR\\) at $ADDR
     REFCNT = (3|4)
-    FLAGS = \\(\\)				# $] < 5.015 || !thr
-    FLAGS = \\(DYNFILE\\)			# $] >= 5.015 && thr
+    FLAGS = \\((?:HASEVAL)?\\)			# $] < 5.015 || !thr
+    FLAGS = \\(DYNFILE(?:,HASEVAL)?\\)		# $] >= 5.015 && thr
     IV = 0					# $] < 5.009
     NV = 0					# $] < 5.009
     COMP_STASH = $ADDR\\t"main"
@@ -310,8 +310,8 @@ do_test('reference to named subroutine without prototype',
     DEPTH = 1(?:
     MUTEXP = $ADDR
     OWNER = $ADDR)?
-    FLAGS = 0x0					# $] < 5.015 || !thr
-    FLAGS = 0x1000				# $] >= 5.015 && thr
+    FLAGS = 0x(?:400)?0				# $] < 5.015 || !thr
+    FLAGS = 0x[145]000				# $] >= 5.015 && thr
     OUTSIDE_SEQ = \\d+
     PADLIST = $ADDR
     PADNAME = $ADDR\\($ADDR\\) PAD = $ADDR\\($ADDR\\)
@@ -333,10 +333,11 @@ do_test('reference to regexp',
   RV = $ADDR
   SV = REGEXP\\($ADDR\\) at $ADDR
     REFCNT = 1
-    FLAGS = \\(OBJECT,POK,FAKE,pPOK\\)
+    FLAGS = \\(OBJECT,POK,FAKE,pPOK\\)		# $] < 5.017006
+    FLAGS = \\(OBJECT,FAKE\\)			# $] >= 5.017006
     PV = $ADDR "\\(\\?\\^:tic\\)"
     CUR = 8
-    LEN = 0
+    LEN = 0					# $] < 5.017006
     STASH = $ADDR\\t"Regexp"'
 . ($] < 5.013 ? '' :
 '
@@ -359,7 +360,8 @@ do_test('reference to regexp',
     SUBSTRS = $ADDR
     PPRIVATE = $ADDR
     OFFS = $ADDR
-    QR_ANONCV = 0x0'
+    QR_ANONCV = 0x0(?:
+    SAVED_COPY = 0x0)?'
 ));
 } else {
 do_test('reference to regexp',
@@ -390,7 +392,7 @@ do_test('reference to blessed hash',
   FLAGS = \\(ROK\\)
   RV = $ADDR
   SV = PVHV\\($ADDR\\) at $ADDR
-    REFCNT = 1
+    REFCNT = [12]
     FLAGS = \\(OBJECT,SHAREKEYS\\)
     IV = 0					# $] < 5.009
     NV = 0					# $] < 5.009
@@ -466,7 +468,7 @@ do_test('reference to hash containing Unicode',
   FLAGS = \\(ROK\\)
   RV = $ADDR
   SV = PVHV\\($ADDR\\) at $ADDR
-    REFCNT = 1
+    REFCNT = [12]
     FLAGS = \\(SHAREKEYS,HASKFLAGS\\)
     UV = 1					# $] < 5.009
     NV = $FLOAT					# $] < 5.009
@@ -497,7 +499,7 @@ do_test('reference to hash containing Unicode',
   FLAGS = \\(ROK\\)
   RV = $ADDR
   SV = PVHV\\($ADDR\\) at $ADDR
-    REFCNT = 1
+    REFCNT = [12]
     FLAGS = \\(SHAREKEYS,HASKFLAGS\\)
     UV = 1					# $] < 5.009
     NV = 0					# $] < 5.009
@@ -528,12 +530,13 @@ do_test('scalar with pos magic',
         $x,
 'SV = PVMG\\($ADDR\\) at $ADDR
   REFCNT = 1
-  FLAGS = \\($PADMY,SMG,POK,pPOK\\)
+  FLAGS = \\($PADMY,SMG,POK,(?:IsCOW,)?pPOK\\)
   IV = 0
   NV = 0
   PV = $ADDR ""\\\0
   CUR = 0
-  LEN = \d+
+  LEN = \d+(?:
+  COW_REFCNT = 1)?
   MAGIC = $ADDR
     MG_VIRTUAL = &PL_vtbl_mglob
     MG_TYPE = PERL_MAGIC_regex_global\\(g\\)
@@ -549,8 +552,9 @@ do_test('scalar with pos magic',
 # VMS is setting FAKE and READONLY flags.  What VMS uses for storing
 # ENV hashes is also not always null terminated.
 #
-do_test('tainted value in %ENV',
-        $ENV{PATH}=@ARGV,  # scalar(@ARGV) is a handy known tainted value
+if (${^TAINT}) {
+  do_test('tainted value in %ENV',
+          $ENV{PATH}=@ARGV,  # scalar(@ARGV) is a handy known tainted value
 'SV = PVMG\\($ADDR\\) at $ADDR
   REFCNT = 1
   FLAGS = \\(GMG,SMG,RMG(?:,POK)?(?:,pIOK)?,pPOK\\)
@@ -576,6 +580,7 @@ do_test('tainted value in %ENV',
   MAGIC = $ADDR
     MG_VIRTUAL = &PL_vtbl_taint
     MG_TYPE = PERL_MAGIC_taint\\(t\\)');
+}
 
 do_test('blessed reference',
 	bless(\\undef, 'Foobar'),
@@ -710,7 +715,7 @@ do_test('blessing to a class with embedded NUL characters',
   FLAGS = \\(ROK\\)
   RV = $ADDR
   SV = PVHV\\($ADDR\\) at $ADDR
-    REFCNT = 1
+    REFCNT = [12]
     FLAGS = \\(OBJECT,SHAREKEYS\\)
     IV = 0					# $] < 5.009
     NV = 0					# $] < 5.009

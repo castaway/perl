@@ -84,7 +84,7 @@
 %token <i_tkval> FUNC0 FUNC1 FUNC UNIOP LSTOP
 %token <i_tkval> RELOP EQOP MULOP ADDOP
 %token <i_tkval> DOLSHARP DO HASHBRACK NOAMP
-%token <i_tkval> LOCAL MY MYSUB REQUIRE
+%token <i_tkval> LOCAL MY REQUIRE
 %token <i_tkval> COLONATTR FORMLBRACK FORMRBRACK
 
 %type <ival> grammar remember mremember
@@ -276,15 +276,17 @@ fullstmt:	barestmt
 
 labfullstmt:	LABEL barestmt
 			{
-			  $$ = newSTATEOP(SvUTF8(((SVOP*)$1)->op_sv),
-                                        savepv(SvPVX(((SVOP*)$1)->op_sv)), $2);
+			  $$ = newSTATEOP(SVf_UTF8
+					   * PVAL($1)[strlen(PVAL($1))+1],
+					  PVAL($1), $2);
 			  TOKEN_GETMAD($1,
 			      $2 ? cLISTOPx($$)->op_first : $$, 'L');
 			}
 	|	LABEL labfullstmt
 			{
-			  $$ = newSTATEOP(SvUTF8(((SVOP*)$1)->op_sv),
-                                        savepv(SvPVX(((SVOP*)$1)->op_sv)), $2);
+			  $$ = newSTATEOP(SVf_UTF8
+					   * PVAL($1)[strlen(PVAL($1))+1],
+					  PVAL($1), $2);
 			  TOKEN_GETMAD($1, cLISTOPx($$)->op_first, 'L');
 			}
 	;
@@ -314,38 +316,55 @@ barestmt:	PLUGSTMT
 			      pad_add_anon(fmtcv, OP_NULL);
 			  }
 			}
-	|	SUB startsub subname proto subattrlist subbody
+	|	SUB subname startsub
+			{
+			  if ($2->op_type == OP_CONST) {
+			    const char *const name =
+				SvPV_nolen_const(((SVOP*)$2)->op_sv);
+			    if (strEQ(name, "BEGIN") || strEQ(name, "END")
+			      || strEQ(name, "INIT") || strEQ(name, "CHECK")
+			      || strEQ(name, "UNITCHECK"))
+			      CvSPECIAL_on(PL_compcv);
+			  }
+			  else
+			  /* State subs inside anonymous subs need to be
+			     clonable themselves. */
+			  if (CvANON(CvOUTSIDE(PL_compcv))
+			   || CvCLONE(CvOUTSIDE(PL_compcv))
+			   || !PadnameIsSTATE(PadlistNAMESARRAY(CvPADLIST(
+						CvOUTSIDE(PL_compcv)
+					     ))[$2->op_targ]))
+			      CvCLONE_on(PL_compcv);
+			  PL_parser->in_my = 0;
+			  PL_parser->in_my_stash = NULL;
+			}
+		proto subattrlist subbody
 			{
 			  SvREFCNT_inc_simple_void(PL_compcv);
 #ifdef MAD
 			  {
 			      OP* o = newSVOP(OP_ANONCODE, 0,
-				(SV*)newATTRSUB($2, $3, $4, $5, $6));
+				(SV*)(
+#endif
+			  $2->op_type == OP_CONST
+			      ? newATTRSUB($3, $2, $5, $6, $7)
+			      : newMYSUB($3, $2, $5, $6, $7)
+#ifdef MAD
+				));
 			      $$ = newOP(OP_NULL,0);
 			      op_getmad(o,$$,'&');
-			      op_getmad($3,$$,'n');
-			      op_getmad($4,$$,'s');
-			      op_getmad($5,$$,'a');
+			      op_getmad($2,$$,'n');
+			      op_getmad($5,$$,'s');
+			      op_getmad($6,$$,'a');
 			      token_getmad($1,$$,'d');
-			      append_madprops($6->op_madprop, $$, 0);
-			      $6->op_madprop = 0;
+			      append_madprops($7->op_madprop, $$, 0);
+			      $7->op_madprop = 0;
 			  }
 #else
-			  newATTRSUB($2, $3, $4, $5, $6);
+			  ;
 			  $$ = (OP*)NULL;
 #endif
-			}
-	|	MYSUB startsub subname proto subattrlist subbody
-			{
-			  /* Unimplemented "my sub foo { }" */
-			  SvREFCNT_inc_simple_void(PL_compcv);
-#ifdef MAD
-			  $$ = newMYSUB($2, $3, $4, $5, $6);
-			  token_getmad($1,$$,'d');
-#else
-			  newMYSUB($2, $3, $4, $5, $6);
-			  $$ = (OP*)NULL;
-#endif
+			  intro_my();
 			}
 	|	PACKAGE WORD WORD ';'
 			{
@@ -668,12 +687,8 @@ startformsub:	/* NULL */	/* start a format subroutine scope */
 	;
 
 /* Name of a subroutine - must be a bareword, could be special */
-subname	:	WORD	{ const char *const name = SvPV_nolen_const(((SVOP*)$1)->op_sv);
-			  if (strEQ(name, "BEGIN") || strEQ(name, "END")
-			      || strEQ(name, "INIT") || strEQ(name, "CHECK")
-			      || strEQ(name, "UNITCHECK"))
-			      CvSPECIAL_on(PL_compcv);
-			  $$ = $1; }
+subname	:	WORD
+	|	PRIVATEREF
 	;
 
 /* Subroutine prototype */
@@ -984,7 +999,7 @@ termbinop:	term ASSIGNOP term                     /* $x = $y */
 			      op = (UNOP*)op->op_first;	/* get to flip */
 			      op = (UNOP*)op->op_first;	/* get to range */
 			      token_getmad($2,(OP*)op,'o');
-			    })
+			    });
 			}
 	|	term ANDAND term                       /* $x && $y */
 			{ $$ = newLOGOP(OP_AND, 0, $1, $3);
@@ -1092,7 +1107,7 @@ termdo	:       DO term	%prec UNIOP                     /* do $filename */
 			{ $$ = newUNOP(OP_NULL, OPf_SPECIAL, op_scope($2));
 			  TOKEN_GETMAD($1,$$,'D');
 			}
-	|	DO WORD '(' ')'                  /* do somesub() */
+	|	DO subname '(' ')'                  /* do somesub() */
 			{ $$ = newUNOP(OP_ENTERSUB,
 			    OPf_SPECIAL|OPf_STACKED,
 			    op_prepend_elem(OP_LIST,
@@ -1104,7 +1119,7 @@ termdo	:       DO term	%prec UNIOP                     /* do $filename */
 			  TOKEN_GETMAD($3,$$,'(');
 			  TOKEN_GETMAD($4,$$,')');
 			}
-	|	DO WORD '(' expr ')'             /* do somesub(@args) */
+	|	DO subname '(' expr ')'             /* do somesub(@args) */
 			{ $$ = newUNOP(OP_ENTERSUB,
 			    OPf_SPECIAL|OPf_STACKED,
 			    op_append_elem(OP_LIST,
@@ -1220,9 +1235,9 @@ term	:	termbinop
 			      }
 			      token_getmad($2,op,'(');
 			      token_getmad($4,op,')');
-			  })
+			  });
 			}
-	|	NOAMP WORD optlistexpr               /* foo(@args) */
+	|	NOAMP subname optlistexpr               /* foo(@args) */
 			{ $$ = newUNOP(OP_ENTERSUB, OPf_STACKED,
 			    op_append_elem(OP_LIST, $3, scalar($2)));
 			  TOKEN_GETMAD($1,$$,'o');
@@ -1334,7 +1349,7 @@ myattrterm:	MY myterm myattrlist
 			      token_getmad($1,$$,'d');
 			      append_madprops($3->op_madprop, $$, 'a');
 			      $3->op_madprop = 0;
-			  )
+			  );
 			}
 	|	MY myterm
 			{ $$ = localize($2,IVAL($1));

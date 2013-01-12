@@ -2713,6 +2713,7 @@ cpan/Unicode-Collate/Collate/CJK/JISX0208.pm			Unicode::Collate
 cpan/Unicode-Collate/Collate/CJK/Korean.pm			Unicode::Collate
 cpan/Unicode-Collate/Collate/CJK/Pinyin.pm			Unicode::Collate
 cpan/Unicode-Collate/Collate/CJK/Stroke.pm			Unicode::Collate
+cpan/Unicode-Collate/Collate/CJK/Zhuyin.pm
 cpan/Unicode-Collate/Collate/keys.txt		Unicode::Collate
 cpan/Unicode-Collate/Collate/Locale/af.pl			Unicode::Collate
 cpan/Unicode-Collate/Collate/Locale/ar.pl			Unicode::Collate
@@ -2795,6 +2796,7 @@ cpan/Unicode-Collate/Collate/Locale/zh_gb.pl			Unicode::Collate
 cpan/Unicode-Collate/Collate/Locale/zh_pin.pl			Unicode::Collate
 cpan/Unicode-Collate/Collate/Locale/zh.pl			Unicode::Collate
 cpan/Unicode-Collate/Collate/Locale/zh_strk.pl			Unicode::Collate
+cpan/Unicode-Collate/Collate/Locale/zh_zhu.pl
 cpan/Unicode-Collate/Collate.pm			Unicode::Collate
 cpan/Unicode-Collate/Collate.xs			Unicode::Collate
 cpan/Unicode-Collate/Makefile.PL			Unicode::Collate
@@ -2809,11 +2811,13 @@ cpan/Unicode-Collate/t/cjk_ko.t		Unicode::Collate
 cpan/Unicode-Collate/t/cjk_py.t		Unicode::Collate
 cpan/Unicode-Collate/t/cjkrange.t		Unicode::Collate
 cpan/Unicode-Collate/t/cjk_st.t		Unicode::Collate
+cpan/Unicode-Collate/t/cjk_zy.t
 cpan/Unicode-Collate/t/compatui.t		Unicode::Collate
 cpan/Unicode-Collate/t/contract.t		Unicode::Collate
 cpan/Unicode-Collate/t/default.t		Unicode::Collate
 cpan/Unicode-Collate/t/hangtype.t		Unicode::Collate
 cpan/Unicode-Collate/t/hangul.t			Unicode::Collate
+cpan/Unicode-Collate/t/ident.t
 cpan/Unicode-Collate/t/iglevel2.t			Unicode::Collate
 cpan/Unicode-Collate/t/ignor.t			Unicode::Collate
 cpan/Unicode-Collate/t/illegalp.t		Unicode::Collate
@@ -2909,6 +2913,7 @@ cpan/Unicode-Collate/t/loc_zhgb.t			Unicode::Collate
 cpan/Unicode-Collate/t/loc_zhpy.t			Unicode::Collate
 cpan/Unicode-Collate/t/loc_zhst.t			Unicode::Collate
 cpan/Unicode-Collate/t/loc_zh.t			Unicode::Collate
+cpan/Unicode-Collate/t/loc_zhzy.t
 cpan/Unicode-Collate/t/nonchar.t			Unicode::Collate
 cpan/Unicode-Collate/t/normal.t			Unicode::Collate
 cpan/Unicode-Collate/t/overcjk0.t		Unicode::Collate
@@ -3054,6 +3059,7 @@ dist/bignum/t/infnan.inc		See if bignum with inf/NaN works
 dist/bignum/t/option_a.t		See if bignum a => X works
 dist/bignum/t/option_l.t		See if bignum l => X works
 dist/bignum/t/option_p.t		See if bignum p => X works
+dist/bignum/t/overrides.t		See if global overrides behave
 dist/bignum/t/ratopt_a.t		See if bigrat a => X works
 dist/bignum/t/scope_f.t			See if no bignum works
 dist/bignum/t/scope_i.t			See if no bigint works
@@ -3067,6 +3073,7 @@ dist/Carp/lib/Carp.pm		Error message extension
 dist/Carp/Makefile.PL		makefile writer for Carp
 dist/Carp/t/Carp.t		See if Carp works
 dist/Carp/t/heavy.t		See if Carp::Heavy works
+dist/Carp/t/stash_deletion.t		See if Carp handles stash deletion
 dist/Carp/t/swash.t		See if Carp avoids breaking swash loading
 dist/Carp/t/vivify_gv.t		See if Carp leaves utf8:: stuff alone
 dist/Carp/t/vivify_stash.t		See if Carp leaves utf8:: stash alone
@@ -3521,6 +3528,7 @@ dist/Thread-Queue/t/05_extract.t	Thread::Queue tests
 dist/Thread-Queue/t/06_insert.t		Thread::Queue tests
 dist/Thread-Queue/t/07_lock.t		Thread::Queue tests
 dist/Thread-Queue/t/08_nothreads.t	Thread::Queue tests
+dist/Thread-Queue/t/09_ended.t		Thread::Queue tests
 dist/Thread-Semaphore/lib/Thread/Semaphore.pm	Thread-safe semaphores
 dist/Thread-Semaphore/t/01_basic.t		Thread::Semaphore tests
 dist/Thread-Semaphore/t/02_errs.t		Thread::Semaphore tests
@@ -3540,6 +3548,7 @@ dist/threads-shared/t/blessed.t		Test blessed shared variables
 dist/threads-shared/t/clone.t		Test shared cloning
 dist/threads-shared/t/cond.t		Test condition variables
 dist/threads-shared/t/disabled.t	Test threads::shared when threads are disabled.
+dist/threads-shared/t/dualvar.t	Test dual-valued variables
 dist/threads-shared/t/hv_refs.t		Test shared hashes containing references
 dist/threads-shared/t/hv_simple.t	Tests for basic shared hash functionality.
 dist/threads-shared/t/no_share.t	Tests for disabled share on variables.
@@ -3631,13 +3640,6 @@ dump.c			Debugging output
 embed.fnc		Database used by embed.pl
 embed.h			Maps symbols to safer names
 embedvar.h		C namespace management
-epoc/config.sh		EPOC port config.sh template
-epoc/createpkg.pl	EPOC port generate PKG file
-epoc/epoc.c		EPOC port
-epoc/epocish.c		EPOC port
-epoc/epocish.h		EPOC port
-epoc/epoc_stubs.c	EPOC port
-epoc/link.pl		EPOC port link a exe
 ext/arybase/arybase.pm		For $[
 ext/arybase/arybase.xs		For $[
 ext/arybase/ptable.h		For $[
@@ -3701,7 +3703,6 @@ ext/DynaLoader/dl_dllload.xs	S/390 dllload() style implementation
 ext/DynaLoader/dl_dlopen.xs	BSD/SunOS4&5 dlopen() style implementation
 ext/DynaLoader/dl_dyld.xs	NeXT/Apple dyld implementation
 ext/DynaLoader/dl_hpux.xs	HP-UX implementation
-ext/DynaLoader/dl_mpeix.xs	MPE/iX implementation
 ext/DynaLoader/dl_next.xs	NeXT implementation
 ext/DynaLoader/dl_none.xs	Stub implementation
 ext/DynaLoader/dl_symbian.xs	Symbian implementation
@@ -3748,6 +3749,7 @@ ext/File-Glob/t/basic.t		See if File::Glob works
 ext/File-Glob/t/case.t		See if File::Glob works
 ext/File-Glob/t/global.t	See if File::Glob works
 ext/File-Glob/TODO		File::Glob extension todo list
+ext/File-Glob/t/rt114984.t	See if File::Glob works
 ext/File-Glob/t/taint.t		See if File::Glob works
 ext/GDBM_File/GDBM_File.pm	GDBM extension Perl module
 ext/GDBM_File/GDBM_File.xs	GDBM extension external subroutines
@@ -3764,7 +3766,6 @@ ext/Hash-Util-FieldHash/t/02_function.t		Test script
 ext/Hash-Util-FieldHash/t/03_class.t		Test script
 ext/Hash-Util-FieldHash/t/04_thread.t		Test script
 ext/Hash-Util-FieldHash/t/05_perlhook.t		Test script
-ext/Hash-Util-FieldHash/t/10_hash.t		Adapted from t/op/hash.t
 ext/Hash-Util-FieldHash/t/11_hashassign.t	Adapted from t/op/hashassign.t
 ext/Hash-Util-FieldHash/t/12_hashwarn.t		Adapted from t/op/hashwarn.t
 ext/Hash-Util/lib/Hash/Util.pm	Hash::Util
@@ -3905,7 +3906,6 @@ ext/POSIX/t/usage.t		Test the diagnostics for usage messages
 ext/POSIX/t/waitpid.t		See if waitpid works
 ext/POSIX/t/wrappers.t		Test the POSIX wrapper subroutines
 ext/POSIX/typemap		POSIX extension interface types
-ext/re/hints/mpeix.pl		Hints for re for named architecture
 ext/re/Makefile.PL		re extension makefile writer
 ext/re/re_comp.h		re extension wrapper for regcomp.h
 ext/re/re.pm			re extension Perl module
@@ -3990,6 +3990,7 @@ ext/XS-APItest/t/blockhooks.t	XS::APItest: tests for PL_blockhooks
 ext/XS-APItest/t/Block.pm	Helper for ./blockhooks.t
 ext/XS-APItest/t/call_checker.t	test call checker plugin API
 ext/XS-APItest/t/caller.t	XS::APItest: tests for caller_cx
+ext/XS-APItest/t/callregexec.t	XS::APItest: tests for CALLREGEXEC()
 ext/XS-APItest/t/call.t		XS::APItest extension
 ext/XS-APItest/t/check_warnings.t	test scope of "Too late for CHECK"
 ext/XS-APItest/t/cleanup.t	test stack behaviour on unwinding
@@ -4016,6 +4017,7 @@ ext/XS-APItest/t/keyword_plugin.t	test keyword plugin mechanism
 ext/XS-APItest/t/labelconst.aux	auxiliary file for label test
 ext/XS-APItest/t/labelconst.t	test recursive descent label parsing
 ext/XS-APItest/t/labelconst_utf8.aux	auxiliary file for label test in UTF-8
+ext/XS-APItest/t/lexsub.t	Test XS registration of lexical subs
 ext/XS-APItest/t/loopblock.t	test recursive descent block parsing
 ext/XS-APItest/t/looprest.t	test recursive descent statement-sequence parsing
 ext/XS-APItest/t/lvalue.t	Test XS lvalue functions
@@ -4151,7 +4153,6 @@ hints/midnightbsd.sh		Hints for named architecture
 hints/mips.sh			Hints for named architecture
 hints/mirbsd.sh			Hints for named architecture
 hints/mpc.sh			Hints for named architecture
-hints/mpeix.sh			Hints for named architecture
 hints/ncr_tower.sh		Hints for named architecture
 hints/netbsd.sh			Hints for named architecture
 hints/newsos4.sh		Hints for named architecture
@@ -4328,11 +4329,19 @@ lib/perl5db/t/proxy-constants	Tests for the Perl debugger
 lib/perl5db/t/rt-104168		Tests for the Perl debugger
 lib/perl5db/t/rt-61222		Tests for the Perl debugger
 lib/perl5db/t/rt-66110		Tests for the Perl debugger
+lib/perl5db/t/source-cmd-test-no-q.perldb		Tests for the Perl debugger
+lib/perl5db/t/source-cmd-test.perldb		Tests for the Perl debugger
 lib/perl5db/t/symbol-table-bug	Tests for the Perl debugger
 lib/perl5db/t/taint		Tests for the Perl debugger
+lib/perl5db/t/test-a-statement-1	Tests for the Perl debugger
+lib/perl5db/t/test-dieLevel-option-1	Tests for the Perl debugger
+lib/perl5db/t/test-frame-option-1	Tests for the Perl debugger
 lib/perl5db/t/test-l-statement-1	Tests for the Perl debugger
 lib/perl5db/t/test-l-statement-2	Tests for the Perl debugger
+lib/perl5db/t/test-m-statement-1	Tests for the Perl debugger
+lib/perl5db/t/test-PrintRet-option-1	Tests for the Perl debugger
 lib/perl5db/t/test-r-statement	Tests for the Perl debugger
+lib/perl5db/t/test-warnLevel-option-1	Tests for the Perl debugger
 lib/perl5db/t/test-w-statement-1	Tests for the Perl debugger
 lib/perl5db/t/uncalled-subroutine	Tests for the Perl debugger
 lib/perl5db/t/with-subroutine		Tests for the Perl debugger
@@ -4486,11 +4495,6 @@ minimod.pl			Writes lib/ExtUtils/Miniperl.pm
 miniperlmain.c			Basic perl w/o dynamic loading or extensions
 mkppport			A script that distributes ppport.h
 mkppport.lst			List of extensions that need a ppport.h
-mpeix/mpeix.c			MPE/iX port
-mpeix/mpeixish.h		MPE/iX port
-mpeix/mpeix_setjmp.c		MPE/iX port
-mpeix/nm			MPE/iX port
-mpeix/relink			MPE/iX port
 mro.c				Method Resolution Order code
 myconfig.SH			Prints summary of the current configuration
 mydtrace.h			Support for optional DTrace probes
@@ -4665,15 +4669,21 @@ pod/perl5121delta.pod		Perl changes in version 5.12.1
 pod/perl5122delta.pod		Perl changes in version 5.12.2
 pod/perl5123delta.pod		Perl changes in version 5.12.3
 pod/perl5124delta.pod		Perl changes in version 5.12.4
+pod/perl5125delta.pod		Perl changes in version 5.12.5
 pod/perl5140delta.pod		Perl changes in version 5.14.0
 pod/perl5141delta.pod		Perl changes in version 5.14.1
 pod/perl5142delta.pod		Perl changes in version 5.14.2
+pod/perl5143delta.pod		Perl changes in version 5.14.3
 pod/perl5160delta.pod		Perl changes in version 5.16.0
 pod/perl5161delta.pod		Perl changes in version 5.16.1
+pod/perl5162delta.pod		Perl changes in version 5.16.2
 pod/perl5170delta.pod		Perl changes in version 5.17.0
 pod/perl5171delta.pod		Perl changes in version 5.17.1
 pod/perl5172delta.pod		Perl changes in version 5.17.2
 pod/perl5173delta.pod		Perl changes in version 5.17.3
+pod/perl5174delta.pod		Perl changes in version 5.17.4
+pod/perl5175delta.pod		Perl changes in version 5.17.5
+pod/perl5176delta.pod		Perl changes in version 5.17.6
 pod/perl561delta.pod		Perl changes in version 5.6.1
 pod/perl56delta.pod		Perl changes in version 5.6
 pod/perl581delta.pod		Perl changes in version 5.8.1
@@ -4814,6 +4824,7 @@ Porting/git-make-p4-refs	Output git refs for each p4 change number, suitable for
 Porting/GitUtils.pm		Generate the contents of a .patch file
 Porting/Glossary		Glossary of config.sh variables
 Porting/how_to_write_a_perldelta.pod	Bluffer's guide to writing a perldelta.
+Porting/leakfinder.pl		Hacky script for finding memory leaks
 Porting/Maintainers		Program to pretty print info in Maintainers.pl
 Porting/Maintainers.pl		Information about maintainers
 Porting/Maintainers.pm		Library to pretty print info in Maintainers.pl
@@ -4827,6 +4838,7 @@ Porting/manicheck		Check against MANIFEST
 Porting/manisort		Sort the MANIFEST
 Porting/new-perldelta.pl	Generate a new perldelta
 Porting/newtests-perldelta.pl	Generate Perldelta stub for newly added tests
+Porting/perl5180delta.pod	Perl changes in version 5.16.0
 Porting/perldelta_template.pod	Template for creating new perldelta.pod files
 Porting/perlhist_calculate.pl		Perform calculations to update perlhist
 Porting/pod_lib.pl		Code for handling generated pods
@@ -4868,7 +4880,6 @@ README.cn			Perl for Simplified Chinese (in EUC-CN)
 README.cygwin			Perl notes for Cygwin
 README.dgux			Perl notes for DG/UX
 README.dos			Perl notes for DOS
-README.epoc			Perl notes for EPOC
 README.freebsd			Perl notes for FreeBSD
 README.haiku			Perl notes for Haiku
 README.hpux			Perl notes for HP-UX
@@ -4880,7 +4891,6 @@ README.linux			Perl notes for Linux
 README.macos			Perl notes for Mac OS (Classic)
 README.macosx			Perl notes for Mac OS X
 README.micro			Notes about microperl
-README.mpeix			Perl notes for MPE/iX
 README.netware			Perl notes for NetWare
 README.openbsd			Perl notes for OpenBSD
 README.os2			Perl notes for OS/2
@@ -4915,6 +4925,7 @@ regen/overload.pl		generate overload.h
 regen_perly.pl			generate perly.{act,h,tab} from perly.y
 regen.pl			Run all scripts that (re)generate files
 regen/reentr.pl			Reentrant interfaces
+regen/regcharclass_multi_char_folds.pl	Generate input for regcharclass.pl
 regen/regcharclass.pl		Generate regcharclass.h from inline data
 regen/regcomp.pl		Builder of regnodes.h
 regen/regen_lib.pl		Common file routines for generator scripts
@@ -4994,6 +5005,7 @@ t/bigmem/read.t			Check read() handles large offsets
 t/bigmem/vec.t			Check vec() handles large offsets
 t/cmd/elsif.t			See if else-if works
 t/cmd/for.t			See if for loops work
+t/cmd/lexsub.t			See if lexical subroutines work
 t/cmd/mod.t			See if statement modifiers work
 t/cmd/subval.t			See if subroutine values work
 t/cmd/switch.t			See if switch optimizations work
@@ -5069,6 +5081,7 @@ t/lib/Cname.pm			Test charnames in regexes (op/pat.t)
 t/lib/common.pl			Helper for lib/{warnings,feature}.t
 t/lib/commonsense.t		See if configuration meets basic needs
 t/lib/compmod.pl		Helper for 1_compile.t
+t/lib/Count.pm			Helper for t/op/method.t
 t/lib/croak/mg			Test croak calls from mg.c
 t/lib/croak/op			Test croak calls from op.c
 t/lib/croak/pp_ctl		Test croak calls from pp_ctl.c
@@ -5080,6 +5093,7 @@ t/lib/dbmt_common.pl		Common functionality for ?DBM_File tests
 t/lib/deprecate/Deprecated.pm	Deprecated module to test deprecate.pm
 t/lib/deprecate/Optionally.pm	Optionally deprecated module to test deprecate.pm
 t/lib/deprecate.t		Test deprecate.pm
+t/lib/Devel/nodb.pm		Module for t/run/switchd.t
 t/lib/Devel/switchd_empty.pm	Module for t/run/switchd.t
 t/lib/Devel/switchd.pm		Module for t/run/switchd.t
 t/lib/feature/bundle		Tests for feature bundles
@@ -5251,6 +5265,7 @@ t/op/cproto.t			Check builtin prototypes
 t/op/crypt.t			See if crypt works
 t/op/current_sub.t		__SUB__ tests
 t/op/dbm.t			See if dbmopen/dbmclose work
+t/op/defined.t			See if defined() edge cases work
 t/op/defins.t			See if auto-insert of defined() works
 t/op/delete.t			See if delete works
 t/op/die_except.t		See if die/eval avoids $@ clobberage
@@ -5405,7 +5420,6 @@ t/op/vec.t			See if vectors work
 t/op/ver.t			See if v-strings and the %v format flag work
 t/op/wantarray.t		See if wantarray works
 t/op/warn.t			See if warn works
-t/op/while_readdir.t		See if while(readdir) works
 t/op/write.t			See if write works (formats work)
 t/op/yadayada.t			See if ... works
 t/perl.supp			Perl valgrind suppressions
@@ -5450,6 +5464,7 @@ t/re/pat_special_cc.t		See if special charclasses (\s \w \d) work the same as (\
 t/re/pat_special_cc_thr.t	See if special charclasses (\s \w \d) work the same as (\s and [\s]) under threads
 t/re/pat.t			See if esoteric patterns work
 t/re/pat_thr.t			See if esoteric patterns work in another thread
+t/re/pos.t			Ensure pos() gets set properly after pre-match failures in pp_match
 t/re/qr-72922.t			Test for bug #72922
 t/re/qr_gc.t			See if qr doesn't leak
 t/re/qrstack.t			See if qr expands the stack properly
@@ -5511,6 +5526,8 @@ t/run/switchx.t			Test the -x switch
 t/TEST				The regression tester
 t/test.pl			Simple testing library
 t/test_pl/can_isa_ok.t		Tests for the simple testing library
+t/test_pl/_num_to_alpha.t	Tests for the simple testing library 
+t/test_pl/tempfile.t		Tests for the simple testing library
 t/thread_it.pl			Run regression tests in a new thread
 t/uni/attrs.t			See if Unicode attributes work
 t/uni/bless.t			See if Unicode bless works

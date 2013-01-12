@@ -544,7 +544,6 @@ be zero.
 /* OutCopFILE() is CopFILE for output (caller, die, warn, etc.) */
 #define OutCopFILE(c) CopFILE(c)
 
-/* FIXME NATIVE_HINTS if this is changed from op_private (see perl.h)  */
 #define CopHINTS_get(c)		((c)->cop_hints + 0)
 #define CopHINTS_set(c, h)	STMT_START {				\
 				    (c)->cop_hints = (h);		\
@@ -1218,7 +1217,8 @@ See L<perlcall/LIGHTWEIGHT CALLBACKS>.
 
 #define POP_MULTICALL \
     STMT_START {							\
-	if (! ((CvDEPTH(multicall_cv) = cx->blk_sub.olddepth)) ) {	\
+	cx = &cxstack[cxstack_ix];					\
+        if (! ((CvDEPTH(multicall_cv) = cx->blk_sub.olddepth)) ) {	\
 		LEAVESUB(multicall_cv);					\
 	}								\
 	POPBLOCK(cx,PL_curpm);						\

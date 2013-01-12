@@ -20,8 +20,10 @@
  *	op_opt		Whether or not the op has been optimised by the
  *			peephole optimiser.
  *	op_slabbed	allocated via opslab
+ *	op_static	tell op_free() to skip PerlMemShared_free(), when
+ *                      !op_slabbed.
  *	op_savefree	on savestack via SAVEFREEOP
- *	op_spare	Four spare bits!
+ *	op_spare	Three spare bits
  *	op_flags	Flags common to all operations.  See OPf_* below.
  *	op_private	Flags peculiar to a particular operation (BUT,
  *			by default, set to the number of children until
@@ -53,7 +55,8 @@ typedef PERL_BITFIELD16 Optype;
     PERL_BITFIELD16 op_opt:1;		\
     PERL_BITFIELD16 op_slabbed:1;	\
     PERL_BITFIELD16 op_savefree:1;	\
-    PERL_BITFIELD16 op_spare:4;		\
+    PERL_BITFIELD16 op_static:1;	\
+    PERL_BITFIELD16 op_spare:3;		\
     U8		op_flags;		\
     U8		op_private;
 #endif
@@ -63,11 +66,9 @@ typedef PERL_BITFIELD16 Optype;
    then all the other bit-fields before/after it should change their
    types too to let VC pack them into the same 4 byte integer.*/
 
+/* for efficiency, requires OPf_WANT_VOID == G_VOID etc */
 #define OP_GIMME(op,dfl) \
-	(((op)->op_flags & OPf_WANT) == OPf_WANT_VOID   ? G_VOID   : \
-	 ((op)->op_flags & OPf_WANT) == OPf_WANT_SCALAR ? G_SCALAR : \
-	 ((op)->op_flags & OPf_WANT) == OPf_WANT_LIST   ? G_ARRAY   : \
-	 dfl)
+	(((op)->op_flags & OPf_WANT) ? ((op)->op_flags & OPf_WANT) : dfl)
 
 #define OP_GIMME_REVERSE(flags)	((flags) & G_WANT)
 
@@ -114,7 +115,7 @@ Deprecated.  Use C<GIMME_V> instead.
 				/*  On OP_ENTERSUB || OP_NULL, saw a "do". */
 				/*  On OP_EXISTS, treat av as av, not avhv.  */
 				/*  On OP_(ENTER|LEAVE)EVAL, don't clear $@ */
-				/*  On pushre, rx is used as part of split, e.g. split " " */
+				/*  On OP_SPLIT, special split " " */
 				/*  On regcomp, "use re 'eval'" was in scope */
 				/*  On OP_READLINE, was <$filehandle> */
 				/*  On RV2[ACGHS]V, don't create GV--in
@@ -139,6 +140,7 @@ Deprecated.  Use C<GIMME_V> instead.
 				    - Before ck_glob, called as CORE::glob
 				    - After ck_glob, use Perl glob function
 			         */
+                                /*  On OP_PADRANGE, push @_ */
 
 /* old names; don't use in new code, but don't break them, either */
 #define OPf_LIST	OPf_WANT_LIST
@@ -233,6 +235,11 @@ Deprecated.  Use C<GIMME_V> instead.
   /* OP_PADSV only */
 #define OPpPAD_STATE		16	/* is a "state" pad */
   /* for OP_RV2?V, lower bits carry hints (currently only HINT_STRICT_REFS) */
+
+  /* OP_PADRANGE only */
+  /* bit 7 is OPpLVAL_INTRO */
+#define OPpPADRANGE_COUNTMASK	127	/* bits 6..0 hold target range, */
+#define OPpPADRANGE_COUNTSHIFT	7	/* 7 bits in total */
 
   /* OP_RV2GV only */
 #define OPpDONT_INIT_GV		4	/* Call gv_fetchpv with GV_NOINIT */
@@ -408,9 +415,6 @@ struct pmop {
  * OP_MATCH and OP_QR */
 #define PMf_ONCE	(1<<(PMf_BASE_SHIFT+1))
 
-/* replacement contains variables */
-#define PMf_MAYBE_CONST (1<<(PMf_BASE_SHIFT+2))
-
 /* PMf_ONCE has matched successfully.  Not used under threading. */
 #define PMf_USED        (1<<(PMf_BASE_SHIFT+3))
 
@@ -566,7 +570,8 @@ struct loop {
 #  define	cGVOPx_gv(o)	((GV*)PAD_SVl(cPADOPx(o)->op_padix))
 #  define	IS_PADGV(v)	(v && SvTYPE(v) == SVt_PVGV && isGV_with_GP(v) \
 				 && GvIN_PAD(v))
-#  define	IS_PADCONST(v)	(v && SvREADONLY(v))
+#  define	IS_PADCONST(v) \
+	(v && (SvREADONLY(v) || (SvIsCOW(v) && !SvLEN(v))))
 #  define	cSVOPx_sv(v)	(cSVOPx(v)->op_sv \
 				 ? cSVOPx(v)->op_sv : PAD_SVl((v)->op_targ))
 #  define	cSVOPx_svp(v)	(cSVOPx(v)->op_sv \

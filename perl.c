@@ -290,6 +290,19 @@ perl_construct(pTHXx)
 #ifdef USE_REENTRANT_API
     Perl_reentrant_init(aTHX);
 #endif
+#if defined(USE_HASH_SEED) || defined(USE_HASH_SEED_EXPLICIT)
+        /* [perl #22371] Algorimic Complexity Attack on Perl 5.6.1, 5.8.0
+         * This MUST be done before any hash stores or fetches take place.
+         * If you set PL_hash_seed (and presumably also PL_hash_seed_set)
+         * yourself, it is your responsibility to provide a good random seed!
+         * You can also define PERL_HASH_SEED in compile time, see hv.h.
+         *
+         * XXX: fix this comment */
+    if (PL_hash_seed_set == FALSE) {
+        Perl_get_hash_seed(aTHX_ PL_hash_seed);
+        PL_hash_seed_set= TRUE;
+    }
+#endif /* #if defined(USE_HASH_SEED) || defined(USE_HASH_SEED_EXPLICIT) */
 
     /* Note that strtab is a rather special HV.  Assumptions are made
        about not iterating on it, and not adding tie magic to it.
@@ -860,7 +873,9 @@ perl_destruct(pTHXx)
     PL_minus_F      = FALSE;
     PL_doswitches   = FALSE;
     PL_dowarn       = G_WARN_OFF;
+#ifdef PERL_SAWAMPERSAND
     PL_sawampersand = 0;	/* must save all match strings */
+#endif
     PL_unsafe       = FALSE;
 
     Safefree(PL_inplace);
@@ -974,15 +989,12 @@ perl_destruct(pTHXx)
     /* clear utf8 character classes */
     SvREFCNT_dec(PL_utf8_alnum);
     SvREFCNT_dec(PL_utf8_alpha);
-    SvREFCNT_dec(PL_utf8_blank);
-    SvREFCNT_dec(PL_utf8_space);
     SvREFCNT_dec(PL_utf8_graph);
     SvREFCNT_dec(PL_utf8_digit);
     SvREFCNT_dec(PL_utf8_upper);
     SvREFCNT_dec(PL_utf8_lower);
     SvREFCNT_dec(PL_utf8_print);
     SvREFCNT_dec(PL_utf8_punct);
-    SvREFCNT_dec(PL_utf8_xdigit);
     SvREFCNT_dec(PL_utf8_mark);
     SvREFCNT_dec(PL_utf8_toupper);
     SvREFCNT_dec(PL_utf8_totitle);
@@ -993,15 +1005,12 @@ perl_destruct(pTHXx)
     SvREFCNT_dec(PL_utf8_foldclosures);
     PL_utf8_alnum	= NULL;
     PL_utf8_alpha	= NULL;
-    PL_utf8_blank	= NULL;
-    PL_utf8_space	= NULL;
     PL_utf8_graph	= NULL;
     PL_utf8_digit	= NULL;
     PL_utf8_upper	= NULL;
     PL_utf8_lower	= NULL;
     PL_utf8_print	= NULL;
     PL_utf8_punct	= NULL;
-    PL_utf8_xdigit	= NULL;
     PL_utf8_mark	= NULL;
     PL_utf8_toupper	= NULL;
     PL_utf8_totitle	= NULL;
@@ -1229,10 +1238,9 @@ perl_destruct(pTHXx)
 	PL_psig_pend = (int*)NULL;
 	Safefree(psig_save);
     }
-    PL_formfeed = NULL;
     nuke_stacks();
-    PL_tainting = FALSE;
-    PL_taint_warn = FALSE;
+    TAINTING_set(FALSE);
+    TAINT_WARN_set(FALSE);
     PL_hints = 0;		/* Reset hints. Should hints be per-interpreter ? */
     PL_debug = 0;
 
@@ -1477,23 +1485,21 @@ perl_parse(pTHXx_ XSINIT_t xsinit, int argc, char **argv, char **env)
 #ifndef MULTIPLICITY
     PERL_UNUSED_ARG(my_perl);
 #endif
-
-#if defined(USE_HASH_SEED) || defined(USE_HASH_SEED_EXPLICIT)
-    /* [perl #22371] Algorimic Complexity Attack on Perl 5.6.1, 5.8.0
-     * This MUST be done before any hash stores or fetches take place.
-     * If you set PL_rehash_seed (and presumably also PL_rehash_seed_set)
-     * yourself, it is your responsibility to provide a good random seed!
-     * You can also define PERL_HASH_SEED in compile time, see hv.h. */
-    if (!PL_rehash_seed_set)
-	 PL_rehash_seed = get_hash_seed();
+#if defined(USE_HASH_SEED) || defined(USE_HASH_SEED_EXPLICIT) || defined(USE_HASH_SEED_DEBUG)
     {
-	const char * const s = PerlEnv_getenv("PERL_HASH_SEED_DEBUG");
+        const char * const s = PerlEnv_getenv("PERL_HASH_SEED_DEBUG");
 
-	if (s && (atoi(s) == 1))
-	    PerlIO_printf(Perl_debug_log, "HASH_SEED = %"UVuf"\n", PL_rehash_seed);
+        if (s && (atoi(s) == 1)) {
+            unsigned char *seed= PERL_HASH_SEED;
+            unsigned char *seed_end= PERL_HASH_SEED + PERL_HASH_SEED_BYTES;
+            PerlIO_printf(Perl_debug_log, "HASH_FUNCTION = %s HASH_SEED = 0x", PERL_HASH_FUNC);
+            while (seed < seed_end) {
+                PerlIO_printf(Perl_debug_log, "%02x", *seed++);
+            }
+            PerlIO_printf(Perl_debug_log, "\n");
+        }
     }
 #endif /* #if defined(USE_HASH_SEED) || defined(USE_HASH_SEED_EXPLICIT) */
-
     PL_origargc = argc;
     PL_origargv = argv;
 
@@ -1595,7 +1601,7 @@ perl_parse(pTHXx_ XSINIT_t xsinit, int argc, char **argv, char **env)
 	PL_do_undump = FALSE;
 	cxstack_ix = -1;		/* start label stack again */
 	init_ids();
-	assert (!PL_tainted);
+	assert (!TAINT_get);
 	TAINT;
 	S_set_caret_X(aTHX);
 	TAINT_NOT;
@@ -1671,7 +1677,7 @@ S_Internals_V(pTHX_ CV *cv)
 #endif
     const int entries = 3 + local_patch_count;
     int i;
-    static char non_bincompat_options[] = 
+    static const char non_bincompat_options[] = 
 #  ifdef DEBUGGING
 			     " DEBUGGING"
 #  endif
@@ -1833,17 +1839,31 @@ S_parse_body(pTHX_ char **env, XSINIT_t xsinit)
 	    break;
 
 	case 't':
+#if SILENT_NO_TAINT_SUPPORT
+            /* silently ignore */
+#elif NO_TAINT_SUPPORT
+            Perl_croak("This perl was compiled without taint support. "
+                       "Cowardly refusing to run with -t or -T flags");
+#else
 	    CHECK_MALLOC_TOO_LATE_FOR('t');
-	    if( !PL_tainting ) {
-	         PL_taint_warn = TRUE;
-	         PL_tainting = TRUE;
+	    if( !TAINTING_get ) {
+	         TAINT_WARN_set(TRUE);
+	         TAINTING_set(TRUE);
 	    }
+#endif
 	    s++;
 	    goto reswitch;
 	case 'T':
+#if SILENT_NO_TAINT_SUPPORT
+            /* silently ignore */
+#elif NO_TAINT_SUPPORT
+            Perl_croak("This perl was compiled without taint support. "
+                       "Cowardly refusing to run with -t or -T flags");
+#else
 	    CHECK_MALLOC_TOO_LATE_FOR('T');
-	    PL_tainting = TRUE;
-	    PL_taint_warn = FALSE;
+	    TAINTING_set(TRUE);
+	    TAINT_WARN_set(FALSE);
+#endif
 	    s++;
 	    goto reswitch;
 
@@ -1944,16 +1964,23 @@ S_parse_body(pTHX_ char **env, XSINIT_t xsinit)
 
     if (
 #ifndef SECURE_INTERNAL_GETENV
-        !PL_tainting &&
+        !TAINTING_get &&
 #endif
 	(s = PerlEnv_getenv("PERL5OPT")))
     {
 	while (isSPACE(*s))
 	    s++;
 	if (*s == '-' && *(s+1) == 'T') {
+#if SILENT_NO_TAINT_SUPPORT
+            /* silently ignore */
+#elif NO_TAINT_SUPPORT
+            Perl_croak("This perl was compiled without taint support. "
+                       "Cowardly refusing to run with -t or -T flags");
+#else
 	    CHECK_MALLOC_TOO_LATE_FOR('T');
-	    PL_tainting = TRUE;
-            PL_taint_warn = FALSE;
+	    TAINTING_set(TRUE);
+            TAINT_WARN_set(FALSE);
+#endif
 	}
 	else {
 	    char *popt_copy = NULL;
@@ -1983,10 +2010,17 @@ S_parse_body(pTHX_ char **env, XSINIT_t xsinit)
 		    }
 		}
 		if (*d == 't') {
-		    if( !PL_tainting ) {
-		        PL_taint_warn = TRUE;
-		        PL_tainting = TRUE;
+#if SILENT_NO_TAINT_SUPPORT
+            /* silently ignore */
+#elif NO_TAINT_SUPPORT
+                    Perl_croak("This perl was compiled without taint support. "
+                               "Cowardly refusing to run with -t or -T flags");
+#else
+		    if( !TAINTING_get) {
+		        TAINT_WARN_set(TRUE);
+		        TAINTING_set(TRUE);
 		    }
+#endif
 		} else {
 		    moreswitches(d);
 		}
@@ -1997,7 +2031,7 @@ S_parse_body(pTHX_ char **env, XSINIT_t xsinit)
 
     /* Set $^X early so that it can be used for relocatable paths in @INC  */
     /* and for SITELIB_EXP in USE_SITECUSTOMIZE                            */
-    assert (!PL_tainted);
+    assert (!TAINT_get);
     TAINT;
     S_set_caret_X(aTHX);
     TAINT_NOT;
@@ -2053,7 +2087,7 @@ S_parse_body(pTHX_ char **env, XSINIT_t xsinit)
 	scriptname = "-";
     }
 
-    assert (!PL_tainted);
+    assert (!TAINT_get);
     init_perllib();
 
     {
@@ -2113,7 +2147,7 @@ S_parse_body(pTHX_ char **env, XSINIT_t xsinit)
     if (xsinit)
 	(*xsinit)(aTHX);	/* in case linked C routines want magical variables */
 #ifndef PERL_MICRO
-#if defined(VMS) || defined(WIN32) || defined(DJGPP) || defined(__CYGWIN__) || defined(EPOC) || defined(SYMBIAN)
+#if defined(VMS) || defined(WIN32) || defined(DJGPP) || defined(__CYGWIN__) || defined(SYMBIAN)
     init_os_extras();
 #endif
 #endif
@@ -2196,7 +2230,7 @@ S_parse_body(pTHX_ char **env, XSINIT_t xsinit)
 #ifdef PERL_MAD
     {
 	const char *s;
-    if (!PL_tainting &&
+    if (!TAINTING_get &&
         (s = PerlEnv_getenv("PERL_XMLDUMP"))) {
 	PL_madskills = 1;
 	PL_minus_c = 1;
@@ -2542,7 +2576,7 @@ Approximate Perl equivalent: C<&{"$sub_name"}(@$argv)>.
 */
 
 I32
-Perl_call_argv(pTHX_ const char *sub_name, I32 flags, register char **argv)
+Perl_call_argv(pTHX_ const char *sub_name, I32 flags, char **argv)
 
           		/* See G_* flags in cop.h */
                      	/* null terminated arg list */
@@ -2854,7 +2888,6 @@ SV*
 Perl_eval_pv(pTHX_ const char *p, I32 croak_on_error)
 {
     dVAR;
-    dSP;
     SV* sv = newSVpv(p, 0);
 
     PERL_ARGS_ASSERT_EVAL_PV;
@@ -2862,12 +2895,18 @@ Perl_eval_pv(pTHX_ const char *p, I32 croak_on_error)
     eval_sv(sv, G_SCALAR);
     SvREFCNT_dec(sv);
 
-    SPAGAIN;
-    sv = POPs;
-    PUTBACK;
+    {
+        dSP;
+        sv = POPs;
+        PUTBACK;
+    }
 
-    if (croak_on_error && SvTRUE(ERRSV)) {
-	Perl_croak(aTHX_ "%s", SvPVx_nolen_const(ERRSV));
+    /* just check empty string or undef? */
+    if (croak_on_error) {
+	SV * const errsv = ERRSV;
+	if(SvTRUE_NN(errsv))
+	    /* replace with croak_sv? */
+	    Perl_croak_nocontext("%s", SvPV_nolen_const(errsv));
     }
 
     return sv;
@@ -3300,8 +3339,15 @@ Perl_moreswitches(pTHX_ const char *s)
 	return s;
     case 't':
     case 'T':
-        if (!PL_tainting)
+#if SILENT_NO_TAINT_SUPPORT
+            /* silently ignore */
+#elif NO_TAINT_SUPPORT
+        Perl_croak("This perl was compiled without taint support. "
+                   "Cowardly refusing to run with -t or -T flags");
+#else
+        if (!TAINTING_get)
 	    TOO_LATE_FOR(*s);
+#endif
         s++;
 	return s;
     case 'u':
@@ -3371,6 +3417,7 @@ Perl_moreswitches(pTHX_ const char *s)
 STATIC void
 S_minus_v(pTHX)
 {
+	PerlIO * PIO_stdout;
 	if (!sv_derived_from(PL_patchlevel, "version"))
 	    upg_version(PL_patchlevel, TRUE);
 #if !defined(DGUX)
@@ -3382,16 +3429,22 @@ S_minus_v(pTHX)
 #  else
 	    SV *num = newSVpvs(PERL_PATCHNUM);
 #  endif
-
-	    if (sv_len(num)>=sv_len(level) && strnEQ(SvPV_nolen(num),SvPV_nolen(level),sv_len(level))) {
-		SvREFCNT_dec(level);
-		level= num;
-	    } else {
-		Perl_sv_catpvf(aTHX_ level, " (%"SVf")", num);
-		SvREFCNT_dec(num);
+	    {
+		STRLEN level_len, num_len;
+		char * level_str, * num_str;
+		num_str = SvPV(num, num_len);
+		level_str = SvPV(level, level_len);
+		if (num_len>=level_len && strnEQ(num_str,level_str,level_len)) {
+		    SvREFCNT_dec(level);
+		    level= num;
+		} else {
+		    Perl_sv_catpvf(aTHX_ level, " (%"SVf")", num);
+		    SvREFCNT_dec(num);
+		}
 	    }
  #endif
-	    PerlIO_printf(PerlIO_stdout(),
+	PIO_stdout =  PerlIO_stdout();
+	    PerlIO_printf(PIO_stdout,
 		"\nThis is perl "	STRINGIFY(PERL_REVISION)
 		", version "		STRINGIFY(PERL_VERSION)
 		", subversion "		STRINGIFY(PERL_SUBVERSION)
@@ -3400,79 +3453,73 @@ S_minus_v(pTHX)
 	    SvREFCNT_dec(level);
 	}
 #else /* DGUX */
+	PIO_stdout =  PerlIO_stdout();
 /* Adjust verbose output as in the perl that ships with the DG/UX OS from EMC */
-	PerlIO_printf(PerlIO_stdout(),
+	PerlIO_printf(PIO_stdout,
 		Perl_form(aTHX_ "\nThis is perl, %"SVf"\n",
 		    SVfARG(vstringify(PL_patchlevel))));
-	PerlIO_printf(PerlIO_stdout(),
+	PerlIO_printf(PIO_stdout,
 			Perl_form(aTHX_ "        built under %s at %s %s\n",
 					OSNAME, __DATE__, __TIME__));
-	PerlIO_printf(PerlIO_stdout(),
+	PerlIO_printf(PIO_stdout,
 			Perl_form(aTHX_ "        OS Specific Release: %s\n",
 					OSVERS));
 #endif /* !DGUX */
 #if defined(LOCAL_PATCH_COUNT)
 	if (LOCAL_PATCH_COUNT > 0)
-	    PerlIO_printf(PerlIO_stdout(),
+	    PerlIO_printf(PIO_stdout,
 			  "\n(with %d registered patch%s, "
 			  "see perl -V for more detail)",
 			  LOCAL_PATCH_COUNT,
 			  (LOCAL_PATCH_COUNT!=1) ? "es" : "");
 #endif
 
-	PerlIO_printf(PerlIO_stdout(),
+	PerlIO_printf(PIO_stdout,
 		      "\n\nCopyright 1987-2012, Larry Wall\n");
 #ifdef MSDOS
-	PerlIO_printf(PerlIO_stdout(),
+	PerlIO_printf(PIO_stdout,
 		      "\nMS-DOS port Copyright (c) 1989, 1990, Diomidis Spinellis\n");
 #endif
 #ifdef DJGPP
-	PerlIO_printf(PerlIO_stdout(),
+	PerlIO_printf(PIO_stdout,
 		      "djgpp v2 port (jpl5003c) by Hirofumi Watanabe, 1996\n"
 		      "djgpp v2 port (perl5004+) by Laszlo Molnar, 1997-1999\n");
 #endif
 #ifdef OS2
-	PerlIO_printf(PerlIO_stdout(),
+	PerlIO_printf(PIO_stdout,
 		      "\n\nOS/2 port Copyright (c) 1990, 1991, Raymond Chen, Kai Uwe Rommel\n"
 		      "Version 5 port Copyright (c) 1994-2002, Andreas Kaiser, Ilya Zakharevich\n");
 #endif
 #ifdef __BEOS__
-	PerlIO_printf(PerlIO_stdout(),
+	PerlIO_printf(PIO_stdout,
 		      "BeOS port Copyright Tom Spindler, 1997-1999\n");
 #endif
-#ifdef MPE
-	PerlIO_printf(PerlIO_stdout(),
-		      "MPE/iX port Copyright by Mark Klein and Mark Bixby, 1996-2003\n");
-#endif
 #ifdef OEMVS
-	PerlIO_printf(PerlIO_stdout(),
+	PerlIO_printf(PIO_stdout,
 		      "MVS (OS390) port by Mortice Kern Systems, 1997-1999\n");
 #endif
 #ifdef __VOS__
-	PerlIO_printf(PerlIO_stdout(),
+	PerlIO_printf(PIO_stdout,
 		      "Stratus VOS port by Paul.Green@stratus.com, 1997-2002\n");
 #endif
 #ifdef POSIX_BC
-	PerlIO_printf(PerlIO_stdout(),
+	PerlIO_printf(PIO_stdout,
 		      "BS2000 (POSIX) port by Start Amadeus GmbH, 1998-1999\n");
 #endif
-#ifdef EPOC
-	PerlIO_printf(PerlIO_stdout(),
-		      "EPOC port by Olaf Flebbe, 1999-2002\n");
-#endif
 #ifdef UNDER_CE
-	PerlIO_printf(PerlIO_stdout(),"WINCE port by Rainer Keuchel, 2001-2002\n");
-	PerlIO_printf(PerlIO_stdout(),"Built on " __DATE__ " " __TIME__ "\n\n");
+	PerlIO_printf(PIO_stdout,
+			"WINCE port by Rainer Keuchel, 2001-2002\n"
+			"Built on " __DATE__ " " __TIME__ "\n\n");
 	wce_hitreturn();
 #endif
 #ifdef __SYMBIAN32__
-	PerlIO_printf(PerlIO_stdout(),
+	PerlIO_printf(PIO_stdout,
 		      "Symbian port by Nokia, 2004-2005\n");
 #endif
 #ifdef BINARY_BUILD_NOTICE
 	BINARY_BUILD_NOTICE;
 #endif
-	PerlIO_printf(PerlIO_stdout(),
+	PerlIO_printf(PIO_stdout,
 		      "\n\
 Perl may be copied only under the terms of either the Artistic License or the\n\
 GNU General Public License, which may be found in the Perl 5 source kit.\n\n\
@@ -3792,6 +3839,9 @@ S_find_beginning(pTHX_ SV* linestr_sv, PerlIO *rsfp)
 STATIC void
 S_init_ids(pTHX)
 {
+    /* no need to do anything here any more if we don't
+     * do tainting. */
+#if !NO_TAINT_SUPPORT
     dVAR;
     const UV my_uid = PerlProc_getuid();
     const UV my_euid = PerlProc_geteuid();
@@ -3800,7 +3850,8 @@ S_init_ids(pTHX)
 
     /* Should not happen: */
     CHECK_MALLOC_TAINT(my_uid && (my_euid != my_uid || my_egid != my_gid));
-    PL_tainting |= (my_uid && (my_euid != my_uid || my_egid != my_gid));
+    TAINTING_set( TAINTING_get | (my_uid && (my_euid != my_uid || my_egid != my_gid)) );
+#endif
     /* BUG */
     /* PSz 27 Feb 04
      * Should go by suidscript, not uid!=euid: why disallow
@@ -4082,7 +4133,7 @@ S_init_predump_symbols(pTHX)
 }
 
 void
-Perl_init_argv_symbols(pTHX_ register int argc, register char **argv)
+Perl_init_argv_symbols(pTHX_ int argc, char **argv)
 {
     dVAR;
 
@@ -4130,7 +4181,7 @@ Perl_init_argv_symbols(pTHX_ register int argc, register char **argv)
 }
 
 STATIC void
-S_init_postdump_symbols(pTHX_ register int argc, register char **argv, register char **env)
+S_init_postdump_symbols(pTHX_ int argc, char **argv, char **env)
 {
     dVAR;
     GV* tmpgv;
@@ -4217,7 +4268,7 @@ S_init_perllib(pTHX)
     STRLEN len;
 #endif
 
-    if (!PL_tainting) {
+    if (!TAINTING_get) {
 #ifndef VMS
 	perl5lib = PerlEnv_getenv("PERL5LIB");
 /*
@@ -4333,7 +4384,7 @@ S_init_perllib(pTHX)
 		      |INCPUSH_CAN_RELOCATE);
 #endif
 
-    if (!PL_tainting) {
+    if (!TAINTING_get) {
 #ifndef VMS
 /*
  * It isn't possible to delete an environment variable with
@@ -4390,11 +4441,11 @@ S_init_perllib(pTHX)
 #endif
 #endif /* !PERL_IS_MINIPERL */
 
-    if (!PL_tainting)
+    if (!TAINTING_get)
 	S_incpush(aTHX_ STR_WITH_LEN("."), 0);
 }
 
-#if defined(DOSISH) || defined(EPOC) || defined(__SYMBIAN32__)
+#if defined(DOSISH) || defined(__SYMBIAN32__)
 #    define PERLLIB_SEP ';'
 #else
 #  if defined(VMS)
@@ -4556,7 +4607,7 @@ S_mayberelocate(pTHX_ const char *const dir, STRLEN len, U32 flags)
 		    SvREFCNT_dec(libdir);
 		    /* And this is the new libdir.  */
 		    libdir = tempsv;
-		    if (PL_tainting &&
+		    if (TAINTING_get &&
 			(PerlProc_getuid() != PerlProc_geteuid() ||
 			 PerlProc_getgid() != PerlProc_getegid())) {
 			/* Need to taint relocated paths if running set ID  */

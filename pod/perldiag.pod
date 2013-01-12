@@ -313,7 +313,7 @@ try to free it.
 
 =item Attempt to free unreferenced scalar: SV 0x%x
 
-(W internal) Perl went to decrement the reference count of a scalar to
+(S internal) Perl went to decrement the reference count of a scalar to
 see if it would go to 0, and discovered that it had already gone to 0
 earlier, and should have been freed, and in fact, probably was freed.
 This could indicate that SvREFCNT_dec() was called too many times, or
@@ -711,7 +711,7 @@ error if you use an explicit C<continue>.)
 =item Can't do inplace edit: %s is not a regular file
 
 (S inplace) You tried to use the B<-i> switch on a special file, such as
-a file in /dev, or a FIFO.  The file was ignored.
+a file in /dev, a FIFO or an uneditable directory.  The file was ignored.
 
 =item Can't do inplace edit on %s: %s
 
@@ -729,13 +729,6 @@ C<-i.bak>, or some such.
 (S inplace) Your filesystem does not support filenames longer than 14
 characters and Perl was unable to create a unique filename during
 inplace editing with the B<-i> switch.  The file was ignored.
-
-=item Can't do {n,m} with n > m in regex; marked by <-- HERE in m/%s/
-
-(F) Minima must be less than or equal to maxima.  If you really
-want your regexp to match something 0 times, just put {0}.  The
-<-- HERE shows in the regular expression about where the problem
-was discovered.  See L<perlre>.
 
 =item Can't do waitpid with flags
 
@@ -1643,14 +1636,6 @@ there are neither package declarations nor a C<$VERSION>.
 long for Perl to handle.  You have to be seriously twisted to write code
 that triggers this error.
 
-=item Deprecated character in \N{...}; marked by <-- HERE  in \N{%s<-- HERE %s
-
-(D deprecated) Just about anything is legal for the C<...> in C<\N{...}>.
-But starting in 5.12, non-reasonable ones that don't look like names
-are deprecated.  A reasonable name begins with an alphabetic character
-and continues with any combination of alphanumerics, dashes, spaces,
-parentheses or colons.
-
 =item Deprecated use of my() in false conditional
 
 (D deprecated) You used a declaration similar to C<my $x if 0>.  There
@@ -1867,6 +1852,14 @@ as a goto, or a loop control statement.
 (W exiting) You are exiting a substitution by unconventional means, such
 as a return, a goto, or a loop control statement.
 
+=item Experimental "%s" subs not enabled
+
+(F) To use lexical subs, you must first enable them:
+
+    no warnings 'experimental::lexical_subs';
+    use feature 'lexical_subs';
+    my sub foo { ... }
+
 =item Explicit blessing to '' (assuming package main)
 
 (W misc) You are blessing a reference to a zero length string.  This has
@@ -1912,7 +1905,7 @@ is not possible.
 
 =item Field too wide in 'u' format in pack
 
-(W pack) Each line in an uuencoded string start with a length indicator
+(W pack) Each line in an uuencoded string starts with a length indicator
 which can't encode values above 63.  So there is no point in asking for
 a line length bigger than that.  Perl will behave as if you specified
 C<u63> as the format.
@@ -2367,6 +2360,17 @@ by Perl or by a user-supplied handler.  See L<attributes>.
 (F) The indicated attributes for a subroutine or variable were not
 recognized by Perl or by a user-supplied handler.  See L<attributes>.
 
+=item Invalid character in \N{...}; marked by <-- HERE in \N{%s}
+
+(F) Only certain characters are valid for character names.  The
+indicated one isn't.  See L<charnames/CUSTOM ALIASES>.
+
+=item Invalid character in charnames alias definition; marked by <-- HERE in '%s
+
+(F) You tried to create a custom alias for a character name, with
+the C<:alias> option to C<use charnames> and the specified character in
+the indicated name isn't valid.  See L<charnames/CUSTOM ALIASES>.
+
 =item Invalid conversion in %s: "%s"
 
 (W printf) Perl does not understand the given format conversion.  See
@@ -2698,7 +2702,15 @@ message.
 
 See also L<Encode/"Handling Malformed Data">.
 
-=item Malformed UTF-8 returned by \N
+=item Malformed UTF-8 character immediately after '%s'
+
+(F) You said C<use utf8>, but the program file doesn't comply with UTF-8
+encoding rules.  The message prints out the properly encoded characters
+just before the first bad one.  If C<utf8> warnings are enabled, a
+warning is generated that gives more details about the type of
+malformation.
+
+=item Malformed UTF-8 returned by \N{%s} immediately after '%s'
 
 (F) The charnames handler returned malformed UTF-8.
 
@@ -2809,7 +2821,7 @@ blank.
 (F) A double-quoted string ended with "\c", without the required control
 character name.
 
-=item Missing name in "my sub"
+=item Missing name in "%s sub"
 
 (F) The reserved syntax for lexically scoped subroutines requires that
 they have a name with which they can be found.
@@ -4090,6 +4102,11 @@ C</abc(?=(?:xyz){3})/>, not C</abc(?=xyz){3}/>.
 The <-- HERE shows in the regular expression about where the problem was
 discovered.
 
+=item Quantifier {n,m} with n > m can't match in regex
+
+(W regexp) Minima should be less than or equal to maxima.  If you really
+want your regexp to match something 0 times, just put {0}.
+
 =item Range iterator outside integer range
 
 (F) One (or both) of the numeric arguments to the range operator ".."
@@ -4259,7 +4276,7 @@ really a dirhandle.  Check your control flow.
 
 =item Scalars leaked: %d
 
-(W internal) Something went wrong in Perl's internal bookkeeping
+(S internal) Something went wrong in Perl's internal bookkeeping
 of scalars: not all scalar variables were deallocated by the time
 Perl exited.  What this usually indicates is a memory leak, which
 is of course bad, especially if the Perl program is intended to be
@@ -4493,6 +4510,12 @@ Perhaps you put it into the wrong package?
 internal bookkeeping of op trees.  An op tree needed to be freed after
 a compilation error, but could not be found, so it was leaked instead.
 
+=item sleep(%u) too large
+
+(W overflow) You called C<sleep> with a number that was larger than
+it can reliably handle and C<sleep> probably slept for less time than
+requested.
+
 =item Smart matching a non-overloaded object breaks encapsulation
 
 (F) You should not use the C<~~> operator on an object that does not
@@ -4506,8 +4529,8 @@ But before sort was a keyword, people sometimes used it as a filehandle.
 
 =item Sort subroutine didn't return single value
 
-(F) A sort comparison subroutine may not return a list value with more
-or less than one element.  See L<perlfunc/sort>.
+(F) A sort comparison subroutine written in XS must return exactly one
+item.  See L<perlfunc/sort>.
 
 =item Source filters apply only to byte streams
 
@@ -4562,6 +4585,44 @@ was either never opened or has since been closed.
 (P) Overloading resolution over @ISA tree may be broken by importation
 stubs.  Stubs should never be implicitly created, but explicit calls to
 C<can> may break this.
+
+=item Subroutine "&%s" is not available
+
+(W closure) During compilation, an inner named subroutine or eval is
+attempting to capture an outer lexical subroutine that is not currently
+available.  This can happen for one of two reasons.  First, the lexical
+subroutine may be declared in an outer anonymous subroutine that has not
+yet been created.  (Remember that named subs are created at compile time,
+while anonymous subs are created at run-time.)  For example,
+
+    sub { my sub a {...} sub f { \&a } }
+
+At the time that f is created, it can't capture the current the "a" sub,
+since the anonymous subroutine hasn't been created yet.  Conversely, the
+following won't give a warning since the anonymous subroutine has by now
+been created and is live:
+
+    sub { my sub a {...} eval 'sub f { \&a }' }->();
+
+The second situation is caused by an eval accessing a variable that has
+gone out of scope, for example,
+
+    sub f {
+	my sub a {...}
+	sub { eval '\&a' }
+    }
+    f()->();
+
+Here, when the '\&a' in the eval is being compiled, f() is not currently
+being executed, so its &a is not available for capture.
+
+=item "%s" subroutine &%s masks earlier declaration in same %s
+
+(W misc) A "my" or "state" subroutine has been redeclared in the
+current scope or statement, effectively eliminating all access to
+the previous instance.  This is almost always a typographical error.
+Note that the earlier subroutine will still exist until the end of
+the scope or until all closure references to it are destroyed.
 
 =item Subroutine %s redefined
 
@@ -4726,6 +4787,18 @@ probably because your vendor didn't supply it, probably because they
 think the U.S. Government thinks it's a secret, or at least that they
 will continue to pretend that it is.  And if you quote me on that, I
 will deny it.
+
+=item The lexical_subs feature is experimental
+
+(S experimental::lexical_subs) This warning is emitted if you
+declare a sub with C<my> or C<state>.  Simply suppress the warning
+if you want to use the feature, but know that in doing so you
+are taking the risk of using an experimental feature which may
+change or be removed in a future Perl version:
+
+    no warnings "experimental::lexical_subs";
+    use feature "lexical_subs";
+    my sub foo { ... }
 
 =item The %s function is unimplemented
 
@@ -4903,7 +4976,7 @@ many blocks were entered and left.
 
 =item Unbalanced string table refcount: (%d) for "%s"
 
-(W internal) On exit, Perl found some strings remaining in the shared
+(S internal) On exit, Perl found some strings remaining in the shared
 string table used for copy on write and for hash keys.  The entries
 should have been freed, so this indicates a bug somewhere.
 
@@ -4997,6 +5070,16 @@ off this warning by C<no warnings 'surrogate';>.
 
 (F) There are no byte-swapping functions for a machine with this byte
 order.
+
+=item Unknown charname '%s'
+
+(F) The name you used inside C<\N{}> is unknown to Perl.  Check the
+spelling.  You can say C<use charnames ":loose"> to not have to be
+so precise about spaces, hyphens, and capitalization on standard Unicode
+names.  (Any custom aliases that have been created must be specified
+exactly, regardless of whether C<:loose> is used or not.)  This error may
+also happen if the C<\N{}> is not in the scope of the corresponding
+C<S<use charnames>>.
 
 =item Unknown error
 
@@ -5533,15 +5616,6 @@ C<$array[0+$ref]>.  This warning is not given for overloaded objects,
 however, because you can overload the numification and stringification
 operators and then you presumably know what you are doing.
 
-=item Use of reserved word "%s" is deprecated
-
-(D deprecated) The indicated bareword is a reserved word.  Future
-versions of perl may use it as a keyword, so you're better off either
-explicitly quoting the word in a manner appropriate for its context of
-use, or using a different name altogether.  The warning can be
-suppressed for subroutine names by either adding a C<&> prefix, or using
-a package qualifier, e.g. C<&our()>, or C<Foo::our()>.
-
 =item Use of tainted arguments in %s is deprecated
 
 (W taint, deprecated) You have supplied C<system()> or C<exec()> with multiple
@@ -5579,11 +5653,11 @@ C<< @foo->[23] >> or C<< @$ref->[99] >>.  Versions of perl <= 5.6.1 used to
 allow this syntax, but shouldn't have.  It is now deprecated,
 and will be removed in a future version.
 
-=item Using just the first character returned by \N{} in character class
+=item Using just the first character returned by \N{} in character class in regex; marked by <-- HERE in m/%s/
 
-(W) A charnames handler may return a sequence of more than one character.
-Currently all but the first one are discarded when used in a regular
-expression pattern bracketed character class.
+(W regexp) A charnames handler may return a sequence of more than one
+character.  Currently all but the first one are discarded when used in
+a regular expression pattern bracketed character class.
 
 =item Using !~ with %s doesn't make sense
 
@@ -5668,7 +5742,7 @@ known at compile time.  See L<perlre>.
 current scope or statement, effectively eliminating all access to the
 previous instance.  This is almost always a typographical error.  Note
 that the earlier variable will still exist until the end of the scope
-or until all closure referents to it are destroyed.
+or until all closure references to it are destroyed.
 
 =item Variable syntax
 
@@ -5695,7 +5769,7 @@ are automatically rebound to the current values of such variables.
 
 =item vector argument not supported with alpha versions
 
-(W internal) The %vd (s)printf format does not support version objects
+(S printf) The %vd (s)printf format does not support version objects
 with alpha parts.
 
 =item Verb pattern '%s' has a mandatory argument in regex; marked by <-- HERE in m/%s/ 

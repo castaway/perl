@@ -650,8 +650,7 @@ $(?<=^(a))	a	y	$1	a
 (?>(a+))b	aaab	y	$1	aaa
 ((?>[^()]+)|\([^()]*\))+	((abc(ade)ufh()()x	y	$&	abc(ade)ufh()()x
 (?<=x+)y	-	c	-	Variable length lookbehind not implemented
-a{37,17}	-	c	-	Can't do {n,m} with n > m
-a{37,0}	-	c	-	Can't do {n,m} with n > m
+((def){37,17})?ABC	ABC	y	$&	ABC
 \Z	a\nb\n	y	$-[0]	3
 \z	a\nb\n	y	$-[0]	4
 $	a\nb\n	y	$-[0]	3
@@ -850,6 +849,7 @@ abb$	b\nca	n	-	-
 'abb\Z'm	b\nca	n	-	-
 'abb\z'm	b\nca	n	-	-
 'abb$'m	b\nca	n	-	-
+'\Aa$'m	a\n\n	y	$&	a
 (^|x)(c)	ca	y	$2	c
 a*abc?xyz+pqr{3}ab{2,}xy{4,5}pq{0,6}AB{0,}zz	x	n	-	-
 a(?{$a=2;$b=3;($b)=$a})b	yabz	y	$b	2
@@ -1544,7 +1544,8 @@ a\97	a97	y	$&	a97
 /^\p{L}/	\x{3400}	y	$&	\x{3400}
 
 # RT #89774
-/[s\xDF]a/ui	ssa	ybT	$&	ssa
+/[s\xDF]a/ui	ssa	y	$&	ssa
+/[s\xDF]a/ui	sa	y	$&	sa
 
 # RT #99928
 /^\R\x0A$/	\x0D\x0A	n	-	-
@@ -1708,5 +1709,11 @@ ab[c\\\](??{"x"})]{3}d	ab\\](d	y	-	-
 # string is not copied
 
 (\x{100})	\x{2000}\x{2000}\x{2000}\x{100}	y	$-[0]:$-[1]:$+[0]:$+[1]	3:3:4:4
+
+^\R{2}$	\r\n\r\n	y	$&	\r\n\r\n
+
+/^\D{11}/a	\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}	n	-	-
+/^\S{11}/a	\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}	n	-	-
+/^\W{11}/a	\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}\x{10FFFF}	n	-	-
 
 # vim: softtabstop=0 noexpandtab
