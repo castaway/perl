@@ -2823,7 +2823,7 @@ $define|true|[yY]*)
 	    nm=$targetarch-nm
 	    ranlib=$targetarch-ranlib
         # if sysroot is set we already have our incpath and libpath discovered, else try to get gcc to tell us
-	    if test "X$sysroot" == X; then
+	    if test "X$sysroot" = X; then
 	        $echo 'extern int foo;' > try.c
 	        set X `$cc -v -E try.c 2>&1 | $awk '/^#include </,/^End of search /'|$grep '/include'`
 	        shift
@@ -2848,7 +2848,7 @@ $define|true|[yY]*)
 	'') echo "Targetarch not defined." >&4; croak=y ;;
         *)  echo "Using targetarch $targetarch." >&4 ;;
 	esac
-    if test "X$sysroot" == X; then
+    if test "X$sysroot" = X; then
 	    case "$incpth" in
 	        '') echo "Incpth not defined." >&4; croak=y ;;
             *)  echo "Using incpth '$incpth'." >&4 ;;
@@ -2880,7 +2880,7 @@ $define|true|[yY]*)
         echo "Cross-compiling using sysroot $sysroot, guessing of GCC inc/lib paths skipped" >&4
     fi
     : compile a host miniperl and generate_uudmap, unless we got passed them
-    if $test "X$hostperl" == X; then
+    if $test "X$hostperl" = X; then
       echo "Building host miniperl and generate_uudmap binaries" >&4
       cd ..
       test -d host || mkdir host
@@ -2901,11 +2901,24 @@ esac
 
 ## Define -Dtargethost=somecomputer to run compiled tests on another machine
 case "$targethost" in
-    '') echo "No targethost for running compiler tests against defined, running locally" >&4
+    '') echo "Checking for cross-compile" >&4
+    case "$usecrosscompile$multiarch" in
+       *$define*) echo "Skipping the try tests in the rest of Configure as no targethost was defined when cross-compiling" >&4
+         if [ -f Makefile ]; then
+           echo " "
+           echo "Now you must ensure config.sh, config.h and the generated headers exist and run a $make."
+         else
+           echo "Configure done."
+         fi
+       exit 0
+       ;;
+     *) echo "No targethost for running compiler tests against defined, running locally" >&4
         run=''
         to=:
         from=:
         ;;
+    esac
+    ;;
     *) echo "Using targethost $targethost." >&4
        case "$src" in
 	       /*) run=$src/Cross/run
@@ -2962,11 +2975,8 @@ case "\$cwd" in
 esac
 exe=\$1
 shift
-if $test ! -f \$exe.xok; then
-  $to \$exe
-  $touch \$exe.xok
-fi
-$targetrun -l $targetuser $targethost "cd \$cwd && ./\$exe \$@"
+$to \$exe
+$targetrun -l $targetuser $targethost "\$cwd/\$exe \$@"
 EOF
 	    ;;
 	       *)  echo "Unknown targetrun '$targetrun'" >&4
