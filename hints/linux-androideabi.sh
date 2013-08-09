@@ -3,8 +3,25 @@
 # Install the perl and its libraries anywhere:
 userelocatableinc='define'
 
+# The Android linker has some unusual behavior: No matter what
+# path is passed in to dlopen(), it'll only use the path's
+# basename when trying to find a cached library.
+# Unfortunately, this is quite problematic for us, since for example,
+# Hash::Util and List::Util both end up creating a Util.so --
+# So if you load List::Util and then Hash::Util, the dlopen() for
+# the latter will return the handle for the former.
+# See the implementation for details:
+# https://code.google.com/p/android-source-browsing/source/browse/linker/linker.c?repo=platform--bionic&r=9ec0f03a0d0b17bbb94ac0b9fef6add28a133c3a#1231
+# What d_libname_unique does is inform MakeMaker that, rather than
+# creating Hash/Util/Util.so, it needs to make Hash/Util/Perl_Hash_Util.so
+d_libname_unique='define'
+
 # On Android the shell is /system/bin/sh:
 targetsh='/system/bin/sh'
+
+# On some devices drand48 isn't functional
+randfunc='random'
+randbits='31'
 
 # Down with locales!
 # https://github.com/android/platform_bionic/blob/master/libc/CAVEATS
@@ -15,7 +32,102 @@ i_locale='undef'
 
 # Default to USE_SHELL_ALWAYS
 d_useshellcmds='define'
-d_libname_unique='define'
+
+# https://code.google.com/p/android-source-browsing/source/browse/libc/netbsd/net/getservent_r.c?repo=platform--bionic&r=ca6fe7bebe3cc6ed7e2db5a3ede2de0fcddf411d#95
+d_getservent_r='undef'
+
+# Bionic defines several stubs that just warn and return NULL
+# https://gitorious.org/0xdroid/bionic/blobs/70b2ef0ec89a9c9d4c2d4bcab728a0e72bafb18e/libc/bionic/stubs.c
+# https://android.googlesource.com/platform/bionic/+/master/libc/bionic/stubs.cpp
+
+# If they warn with 'FIX' or 'Android', assume they are the stubs
+# we want to avoid.
+
+# These are all stubs as well, but the core doesn't use them:
+# getusershell setusershell endusershell
+
+# This script UU/archname.cbu will get 'called-back' by Configure.
+cat > UU/archname.cbu <<'EOCBU'
+# egrep pattern to detect a stub warning on Android.
+# Right now we're checking for:
+# Android 2.x: FIX ME! implement FUNC
+# Android 4.x: FUNC is not implemented on Android
+android_stub='FIX|Android'
+
+cat > try.c << 'EOM'
+#include <netdb.h>
+int main() { (void) getnetbyname("foo"); return(0); }
+EOM
+$cc $ccflags try.c -o try
+android_warn=`$run ./try 2>&1 | $egrep "$android_stub"`
+if test "X$android_warn" != X; then
+   d_getnbyname="$undef"
+fi
+
+cat > try.c << 'EOM'
+#include <netdb.h>
+int main() { (void) getnetbyaddr((uint32_t)1, AF_INET); return(0); }
+EOM
+$cc $ccflags try.c -o try
+android_warn=`$run ./try 2>&1 | $egrep "$android_stub"`
+if test "X$android_warn" != X; then
+   d_getnbyaddr="$undef"
+fi
+
+cat > try.c << 'EOM'
+#include <stdio.h>
+#include <mntent.h>
+#include <unistd.h>
+int main() { (void) getmntent(stdout); return(0); }
+EOM
+$cc $ccflags try.c -o try
+android_warn=`$run ./try 2>&1 | $egrep "$android_stub"`
+if test "X$android_warn" != X; then
+   d_getmntent="$undef"
+fi
+
+cat > try.c << 'EOM'
+#include <netdb.h>
+int main() { (void) getprotobyname("foo"); return(0); }
+EOM
+$cc $ccflags try.c -o try
+android_warn=`$run ./try 2>&1 | $egrep "$android_stub"`
+if test "X$android_warn" != X; then
+   d_getpbyname="$undef"
+fi
+
+cat > try.c << 'EOM'
+#include <netdb.h>
+int main() { (void) getprotobynumber(1); return(0); }
+EOM
+$cc $ccflags try.c -o try
+android_warn=`$run ./try 2>&1 | $egrep "$android_stub"`
+if test "X$android_warn" != X; then
+   d_getpbynumber="$undef"
+fi
+
+cat > try.c << 'EOM'
+#include <sys/types.h>
+#include <pwd.h>
+int main() { endpwent(); return(0); }
+EOM
+$cc $ccflags try.c -o try
+android_warn=`$run ./try 2>&1 | $egrep "$android_stub"`
+if test "X$android_warn" != X; then
+   d_endpwent="$undef"
+fi
+
+cat > try.c << 'EOM'
+#include <unistd.h>
+int main() { (void) ttyname(STDIN_FILENO); return(0); }
+EOM
+$cc $ccflags try.c -o try
+android_warn=`$run ./try 2>&1 | $egrep "$android_stub"`
+if test "X$android_warn" != X; then
+   d_ttyname="$undef"
+fi
+
+EOCBU
 
 case "$src" in
     /*) run=$src/Cross/run
@@ -75,7 +187,7 @@ $from output.stdout
 $from output.stderr
 result=\`cat output.stdout\`
 result_err=\`cat output.stderr\`
-rm output.stdout
+rm output.stdout output.stderr
 result=\`echo "\$result" | sed -e 's|\r||g'\`
 result_err=\`echo "\$result_err" | sed -e 's|\r||g'\`
 foo=\`echo \$foo | sed -e 's|\r||g'\`

@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use warnings::register;
 use Carp;
+use Config;
 use Exporter        ();
 use Fcntl           qw< O_WRONLY >;
 use File::Basename;
@@ -435,10 +436,15 @@ sub syslog {
         $whoami .= "[$$]" if $options{pid};
 
         $sum = $numpri + $numfac;
-        my $oldlocale = setlocale(LC_TIME);
-        setlocale(LC_TIME, 'C');
+        my $oldlocale;
+        if ( $Config::Config{d_setlocale} ) {
+            $oldlocale = setlocale(LC_TIME);
+            setlocale(LC_TIME, 'C');
+        }
         my $timestamp = strftime "%b %d %H:%M:%S", localtime;
-        setlocale(LC_TIME, $oldlocale);
+        if ( $Config::Config{d_setlocale} ) {
+            setlocale(LC_TIME, $oldlocale);
+        }
 
         # construct the stream that will be transmitted
         $buf = "<$sum>$timestamp $whoami: $message";
@@ -624,7 +630,10 @@ sub connect_log {
 sub connect_tcp {
     my ($errs) = @_;
 
-    my $proto = getprotobyname('tcp');
+    my $proto;
+    if ( $Config{d_getpbyname} ) {
+        $proto = getprotobyname('tcp');
+    }
     if (!defined $proto) {
 	push @$errs, "getprotobyname failed for tcp";
 	return 0;
@@ -672,7 +681,10 @@ sub connect_tcp {
 sub connect_udp {
     my ($errs) = @_;
 
-    my $proto = getprotobyname('udp');
+    my $proto;
+    if ( $Config{d_getpbyname} ) {
+        $proto = getprotobyname('udp');
+    }
     if (!defined $proto) {
 	push @$errs, "getprotobyname failed for udp";
 	return 0;

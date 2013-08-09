@@ -1566,6 +1566,9 @@ Access permissions are mapped onto VOS access-control list changes. (VOS)
 The actual permissions set depend on the value of the C<CYGWIN>
 in the SYSTEM environment settings.  (Cygwin)
 
+Setting the exec bit on some locations (generally /sdcard) will return true
+but not actually set the bit. (Android)
+
 =item chown
 
 Not implemented. (Win32, S<Plan 9>, S<RISC OS>)
@@ -1582,6 +1585,8 @@ Not implemented. (Win32, VMS, S<Plan 9>, S<RISC OS>, VOS)
 
 May not be available if library or source was not provided when building
 perl. (Win32)
+
+Not implemented. (Android)
 
 =item dbmclose
 
@@ -1605,6 +1610,9 @@ Does not automatically flush output handles on some platforms.
 (SunOS, Solaris, HP-UX)
 
 Not supported. (Symbian OS)
+
+Won't return if the executable does not exist on Perls compiled with
+-DUSE_SHELL_ALWAYS.
 
 =item exit
 
@@ -1674,7 +1682,7 @@ Not implemented. (Win32, VMS, S<RISC OS>)
 
 =item getnetbyname
 
-Not implemented. (Win32, S<Plan 9>)
+Not implemented. (Android, Win32, S<Plan 9>)
 
 =item getpwuid
 
@@ -1688,19 +1696,21 @@ Not implemented. (Win32, VMS, S<RISC OS>)
 
 =item getnetbyaddr
 
-Not implemented. (Win32, S<Plan 9>)
+Not implemented. (Android, Win32, S<Plan 9>)
 
 =item getprotobynumber
+
+Not implemented. (Android)
 
 =item getservbyport
 
 =item getpwent
 
-Not implemented. (Win32)
+Not implemented. (Android, Win32)
 
 =item getgrent
 
-Not implemented. (Win32, VMS)
+Not implemented. (Android, Win32, VMS)
 
 =item gethostbyname
 
@@ -1713,19 +1723,23 @@ Not implemented. (Win32)
 
 =item getnetent
 
-Not implemented. (Win32, S<Plan 9>)
+Not implemented. (Android, Win32, S<Plan 9>)
 
 =item getprotoent
 
-Not implemented. (Win32, S<Plan 9>)
+Not implemented. (Android, Win32, S<Plan 9>)
 
 =item getservent
 
 Not implemented. (Win32, S<Plan 9>)
 
+=item seekdir
+
+Not implemented. (Android)
+
 =item sethostent
 
-Not implemented. (Win32, S<Plan 9>, S<RISC OS>)
+Not implemented. (Android, Win32, S<Plan 9>, S<RISC OS>)
 
 =item setnetent
 
@@ -1733,7 +1747,7 @@ Not implemented. (Win32, S<Plan 9>, S<RISC OS>)
 
 =item setprotoent
 
-Not implemented. (Win32, S<Plan 9>, S<RISC OS>)
+Not implemented. (Android, Win32, S<Plan 9>, S<RISC OS>)
 
 =item setservent
 
@@ -1743,21 +1757,23 @@ Not implemented. (S<Plan 9>, Win32, S<RISC OS>)
 
 Not implemented. (Win32)
 
+Either not implemented or a no-op. (Android)
+
 =item endgrent
 
-Not implemented. (S<RISC OS>, VMS, Win32)
+Not implemented. (Android, S<RISC OS>, VMS, Win32)
 
 =item endhostent
 
-Not implemented. (Win32)
+Not implemented. (Android, Win32)
 
 =item endnetent
 
-Not implemented. (Win32, S<Plan 9>)
+Not implemented. (Android, Win32, S<Plan 9>)
 
 =item endprotoent
 
-Not implemented. (Win32, S<Plan 9>)
+Not implemented. (Android, Win32, S<Plan 9>)
 
 =item endservent
 
@@ -1845,7 +1861,7 @@ Return values (especially for device and inode) may be bogus. (Win32)
 
 =item msgrcv
 
-Not implemented. (Win32, VMS, S<Plan 9>, S<RISC OS>, VOS)
+Not implemented. (Android, Win32, VMS, S<Plan 9>, S<RISC OS>, VOS)
 
 =item open
 
@@ -1853,6 +1869,13 @@ open to C<|-> and C<-|> are unsupported. (Win32, S<RISC OS>)
 
 Opening a process does not automatically flush output handles on some
 platforms.  (SunOS, Solaris, HP-UX)
+
+While you may use open with undef as the filename to create a temporary
+file, this is unreliable, as a system may not have a /tmp directory or
+equivalent, and have no $ENV{TMPDIR} set.  Consider using File::Temp
+instead.  Alternatively, you could explicitly set $ENV{TMPDIR} before
+calling open.  If neither TMPDIR nor /tmp exist, the current directory
+is used. (Android)
 
 =item readlink
 
@@ -1882,11 +1905,11 @@ Note that the C<select FILEHANDLE> form is generally portable.
 
 =item semop
 
-Not implemented. (Win32, VMS, S<RISC OS>)
+Not implemented. (Android, Win32, VMS, S<RISC OS>)
 
 =item setgrent
 
-Not implemented. (VMS, Win32, S<RISC OS>)
+Not implemented. (Android, VMS, Win32, S<RISC OS>)
 
 =item setpgrp
 
@@ -1898,7 +1921,7 @@ Not implemented. (Win32, VMS, S<RISC OS>, VOS)
 
 =item setpwent
 
-Not implemented. (Win32, S<RISC OS>)
+Not implemented. (Android, Win32, S<RISC OS>)
 
 =item setsockopt
 
@@ -1912,7 +1935,7 @@ Not implemented. (S<Plan 9>)
 
 =item shmwrite
 
-Not implemented. (Win32, VMS, S<RISC OS>)
+Not implemented. (Android, Win32, VMS, S<RISC OS>)
 
 =item sleep
 
@@ -2007,6 +2030,10 @@ room for a made-up value derived from the severity bits of the native
 If the native condition code is one that has a POSIX value encoded, the
 POSIX value will be decoded to extract the expected exit value.
 For more details see L<perlvms/$?>. (VMS)
+
+=item telldir
+
+Not implemented. (Android)
 
 =item times
 

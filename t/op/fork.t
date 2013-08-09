@@ -288,6 +288,9 @@ parent got 10752
 $| = 1;
 $\ = "\n";
 my $echo = 'echo';
+if ($^O eq 'linux-androideabi') {
+    $echo = q{sh -c 'echo $@' -- };
+}
 if ($pid = fork) {
     waitpid($pid,0);
     print "parent got $?"
@@ -491,7 +494,7 @@ if (my $pid = fork) {
 }
 else {
     $SIG{TERM} = sub { print "2\n" };
-    sleep 3;
+    sleep 10;
     print "3\n";
 }
 EXPECT
